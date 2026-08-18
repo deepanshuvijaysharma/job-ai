@@ -357,23 +357,27 @@ model EmailCampaign {
 }
 
 model EmailMessage {
-  id             String               @id @default(uuid())
-  campaignId     String?
-  campaign       EmailCampaign?       @relation(fields: [campaignId], references: [id])
-  accountId      String
-  account        EmailAccount         @relation(fields: [accountId], references: [id])
-  recruiterId    String?
-  recruiter      Recruiter?           @relation(fields: [recruiterId], references: [id])
-  applicationId  String?
-  application    Application?         @relation(fields: [applicationId], references: [id])
-  subject        String
-  body           String
-  isApproved     Boolean              @default(false)
-  approvedAt     DateTime?
-  sentAt         DateTime?
-  classification EmailClassification?
-  aiReasoning    String?
-  createdAt      DateTime             @default(now())
+  id                String               @id @default(uuid())
+  campaignId        String?
+  campaign          EmailCampaign?       @relation(fields: [campaignId], references: [id])
+  accountId         String
+  account           EmailAccount         @relation(fields: [accountId], references: [id])
+  recruiterId       String?
+  recruiter         Recruiter?           @relation(fields: [recruiterId], references: [id])
+  applicationId     String?
+  application       Application?         @relation(fields: [applicationId], references: [id])
+  subject           String
+  body              String
+  isApproved        Boolean              @default(false)
+  approvedAt        DateTime?
+  sentAt            DateTime?
+  failedAt          DateTime?
+  status            String               @default("PENDING")
+  externalMessageId String?
+  failureReason     String?
+  classification    EmailClassification?
+  aiReasoning       String?
+  createdAt         DateTime             @default(now())
 }
 
 model FollowUp {

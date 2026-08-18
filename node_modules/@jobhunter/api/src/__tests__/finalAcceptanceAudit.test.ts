@@ -8,6 +8,8 @@ import { emailGeneratorService } from '../services/outreach/emailGenerator';
 import { queuedEmailsMap } from '../controllers/outreachController';
 import { emailOAuthService } from '../services/email/emailOAuthService';
 import { oauthStateService } from '../services/email/oauthStateService';
+import { tokenEncryption } from '../services/email/tokenEncryption';
+import { emailRepository } from '../repositories/prismaRepository';
 import { inboxIntelligenceService } from '../services/email/inboxIntelligence';
 import { followUpEngineService } from '../services/outreach/followUpEngine';
 import { RemotePreference } from '@jobhunter/types';
@@ -130,10 +132,32 @@ describe('JobHunter AI Step 10: Complete End-to-End Final Acceptance Verificatio
     expect(followUps.length).toBe(3); // Day 2, 5, 10
 
     // 6. Connect OAuth & Dispatch Email
-    const stateToken = oauthStateService.generateState('demo-user-123', 'gmail');
-    await emailOAuthService.handleOAuthCallback('demo-user-123', 'gmail', 'auth-code-123', stateToken);
+    const origFetch = global.fetch;
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ id: 'gmail-e2e-12345' })
+    } as any);
+
+    const accState = {
+      id: 'acc-e2e-gmail-101',
+      userId: 'demo-user-123',
+      provider: 'gmail' as const,
+      emailAddress: 'deepanshu.e2e@example.com',
+      encryptedAccessToken: tokenEncryption.encryptToken('valid-e2e-gmail-token'),
+      encryptedRefreshToken: null,
+      isDefault: true,
+      isConnected: true,
+      dailySentCount: 0,
+      createdAt: new Date().toISOString()
+    };
+    await emailRepository.upsertAccount({ ...accState, encryptedRefreshToken: undefined });
+    emailOAuthService.saveToLocalCache(accState);
+
     const dispatchLog = await emailOAuthService.dispatchApprovedOutreach('demo-user-123', msgId);
     expect(dispatchLog.status).toBe('SENT');
+    expect(dispatchLog.externalMessageId).toBe('gmail-e2e-12345');
+    global.fetch = origFetch;
 
     // 7. Recruiter Reply Arrives & AI Classifies Reply
     const incomingEmail = {

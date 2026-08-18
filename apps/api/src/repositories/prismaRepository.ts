@@ -557,11 +557,66 @@ export class EmailRepository {
         where: {
           accountId,
           sentAt: { gte: startOfDay },
+          status: 'SENT',
           isApproved: true
         }
       }));
     } catch {
       return 0;
+    }
+  }
+
+  async recordDispatchMessage(data: {
+    id: string;
+    accountId: string;
+    recruiterId?: string;
+    applicationId?: string;
+    subject: string;
+    body: string;
+    isApproved: boolean;
+    approvedAt?: Date;
+    sentAt?: Date;
+    failedAt?: Date;
+    status: string;
+    externalMessageId?: string | null;
+    failureReason?: string | null;
+  }) {
+    try {
+      return await executeWithFastTimeout(() => prisma.emailMessage.upsert({
+        where: { id: data.id },
+        create: {
+          id: data.id,
+          accountId: data.accountId,
+          recruiterId: data.recruiterId,
+          applicationId: data.applicationId,
+          subject: data.subject,
+          body: data.body,
+          isApproved: data.isApproved,
+          approvedAt: data.approvedAt,
+          sentAt: data.sentAt,
+          failedAt: data.failedAt,
+          status: data.status,
+          externalMessageId: data.externalMessageId,
+          failureReason: data.failureReason
+        },
+        update: {
+          sentAt: data.sentAt,
+          failedAt: data.failedAt,
+          status: data.status,
+          externalMessageId: data.externalMessageId,
+          failureReason: data.failureReason
+        }
+      }));
+    } catch {
+      return null;
+    }
+  }
+
+  async findMessageById(id: string) {
+    try {
+      return await executeWithFastTimeout(() => prisma.emailMessage.findUnique({ where: { id } }));
+    } catch {
+      return null;
     }
   }
 

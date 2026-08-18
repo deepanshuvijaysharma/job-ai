@@ -1,6 +1,5 @@
 import { tokenEncryption } from './tokenEncryption';
 import { oauthStateService } from './oauthStateService';
-import { memoryStore } from '../store';
 import { queuedEmailsMap } from '../../controllers/outreachController';
 import { EmailAccountDTO, EmailDispatchLogDTO } from '@jobhunter/types';
 import { emailRepository } from '../../repositories/prismaRepository';
@@ -25,7 +24,7 @@ export class EmailOAuthService {
   private localAccountsCache: Map<string, EmailAccountState[]> = new Map();
   public dispatchLogs: EmailDispatchLogDTO[] = [];
 
-  // 1. Gmail OAuth URL Generator (Zero Fake Credentials)
+  // 1. Gmail OAuth URL Generator
   public getGmailAuthUrl(userId: string): { url: string | null; status: 'CONFIGURED' | 'NOT_CONFIGURED' } {
     const clientId = process.env.GMAIL_CLIENT_ID;
     const redirectUri = process.env.GMAIL_REDIRECT_URI;
@@ -41,7 +40,7 @@ export class EmailOAuthService {
     return { url, status: 'CONFIGURED' };
   }
 
-  // 2. Microsoft OAuth URL Generator (Zero Fake Credentials)
+  // 2. Microsoft OAuth URL Generator
   public getOutlookAuthUrl(userId: string): { url: string | null; status: 'CONFIGURED' | 'NOT_CONFIGURED' } {
     const clientId = process.env.MICROSOFT_CLIENT_ID;
     const redirectUri = process.env.MICROSOFT_REDIRECT_URI;
@@ -58,13 +57,12 @@ export class EmailOAuthService {
     return { url, status: 'CONFIGURED' };
   }
 
-  // 3. Process OAuth Callback with Cryptographic State Validation & Real Token Exchange
+  // 3. Process OAuth Callback with Cryptographic State Validation & Real Token Exchange (Zero Production Credential Manufacture)
   public async handleOAuthCallback(
     userId: string,
     provider: 'gmail' | 'outlook',
     code: string,
-    stateToken: string,
-    userEmailAddress?: string
+    stateToken: string
   ): Promise<EmailAccountState> {
     if (!code) {
       throw new Error('Authorization code is required');
@@ -88,50 +86,44 @@ export class EmailOAuthService {
       const redirectUri = process.env.GMAIL_REDIRECT_URI;
 
       if (!clientId || !clientSecret || !redirectUri) {
-        if (process.env.NODE_ENV === 'test' || code.startsWith('mock-') || code.startsWith('auth-code-')) {
-          // Sandbox test execution
-          accessToken = `test-access-token-${Date.now()}`;
-          refreshToken = `test-refresh-token-${Date.now()}`;
-          emailAddress = userEmailAddress || 'candidate.test@example.com';
-        } else {
-          throw new Error('NOT_CONFIGURED: Gmail OAuth credentials are missing from server configuration');
-        }
-      } else {
-        const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({
-            code,
-            client_id: clientId,
-            client_secret: clientSecret,
-            redirect_uri: redirectUri,
-            grant_type: 'authorization_code'
-          })
-        });
-
-        if (!tokenRes.ok) {
-          const errText = await tokenRes.text();
-          throw new Error(`Gmail OAuth token exchange failed: HTTP ${tokenRes.status} - ${errText}`);
-        }
-
-        const data = await tokenRes.json() as any;
-        accessToken = data.access_token;
-        refreshToken = data.refresh_token || null;
-        expiresInSeconds = data.expires_in || 3600;
-
-        const userInfoRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-          headers: { Authorization: `Bearer ${accessToken}` }
-        });
-        if (!userInfoRes.ok) {
-          throw new Error('Failed to fetch verified user email address from Google API');
-        }
-
-        const userInfo = await userInfoRes.json() as any;
-        if (!userInfo.email) {
-          throw new Error('Google UserInfo API did not return a verified email address');
-        }
-        emailAddress = userInfo.email;
+        throw new Error('NOT_CONFIGURED: Gmail OAuth credentials are missing from server configuration');
       }
+
+      const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          code,
+          client_id: clientId,
+          client_secret: clientSecret,
+          redirect_uri: redirectUri,
+          grant_type: 'authorization_code'
+        })
+      });
+
+      if (!tokenRes.ok) {
+        const errText = await tokenRes.text();
+        throw new Error(`Gmail OAuth token exchange failed: HTTP ${tokenRes.status} - ${errText}`);
+      }
+
+      const data = await tokenRes.json() as any;
+      accessToken = data.access_token;
+      refreshToken = data.refresh_token || null;
+      expiresInSeconds = data.expires_in || 3600;
+
+      // Fetch verified user email from Google UserInfo API
+      const userInfoRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      if (!userInfoRes.ok) {
+        throw new Error('Failed to fetch verified user email address from Google API');
+      }
+
+      const userInfo = await userInfoRes.json() as any;
+      if (!userInfo.email) {
+        throw new Error('Google UserInfo API did not return a verified email address');
+      }
+      emailAddress = userInfo.email;
 
     } else {
       const clientId = process.env.MICROSOFT_CLIENT_ID;
@@ -140,46 +132,40 @@ export class EmailOAuthService {
       const tenant = process.env.MICROSOFT_TENANT_ID || 'common';
 
       if (!clientId || !clientSecret || !redirectUri) {
-        if (process.env.NODE_ENV === 'test' || code.startsWith('mock-') || code.startsWith('auth-code-')) {
-          // Sandbox test execution
-          accessToken = `test-access-token-${Date.now()}`;
-          refreshToken = `test-refresh-token-${Date.now()}`;
-          emailAddress = userEmailAddress || 'candidate.test@example.com';
-        } else {
-          throw new Error('NOT_CONFIGURED: Microsoft OAuth credentials are missing from server configuration');
-        }
-      } else {
-        const tokenRes = await fetch(`https://login.microsoftonline.com/${tenant}/oauth2/v2.0/token`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({
-            code,
-            client_id: clientId,
-            client_secret: clientSecret,
-            redirect_uri: redirectUri,
-            grant_type: 'authorization_code'
-          })
-        });
-
-        if (!tokenRes.ok) {
-          const errText = await tokenRes.text();
-          throw new Error(`Microsoft OAuth token exchange failed: HTTP ${tokenRes.status} - ${errText}`);
-        }
-
-        const data = await tokenRes.json() as any;
-        accessToken = data.access_token;
-        refreshToken = data.refresh_token || null;
-        expiresInSeconds = data.expires_in || 3600;
-
-        const profileRes = await fetch('https://graph.microsoft.com/v1.0/me', {
-          headers: { Authorization: `Bearer ${accessToken}` }
-        });
-        if (!profileRes.ok) {
-          throw new Error('Failed to fetch user profile from Microsoft Graph API');
-        }
-        const profileData = await profileRes.json() as any;
-        emailAddress = profileData.mail || profileData.userPrincipalName;
+        throw new Error('NOT_CONFIGURED: Microsoft OAuth credentials are missing from server configuration');
       }
+
+      const tokenRes = await fetch(`https://login.microsoftonline.com/${tenant}/oauth2/v2.0/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          code,
+          client_id: clientId,
+          client_secret: clientSecret,
+          redirect_uri: redirectUri,
+          grant_type: 'authorization_code'
+        })
+      });
+
+      if (!tokenRes.ok) {
+        const errText = await tokenRes.text();
+        throw new Error(`Microsoft OAuth token exchange failed: HTTP ${tokenRes.status} - ${errText}`);
+      }
+
+      const data = await tokenRes.json() as any;
+      accessToken = data.access_token;
+      refreshToken = data.refresh_token || null;
+      expiresInSeconds = data.expires_in || 3600;
+
+      // Fetch user profile from Microsoft Graph
+      const profileRes = await fetch('https://graph.microsoft.com/v1.0/me', {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      if (!profileRes.ok) {
+        throw new Error('Failed to fetch user profile from Microsoft Graph API');
+      }
+      const profileData = await profileRes.json() as any;
+      emailAddress = profileData.mail || profileData.userPrincipalName;
     }
 
     // Encrypt tokens before saving
@@ -216,12 +202,22 @@ export class EmailOAuthService {
       dailySentCount: 0
     });
 
-    const userAccounts = this.localAccountsCache.get(userId) || [];
-    userAccounts.forEach(a => { a.isDefault = false; });
-    userAccounts.push(accountState);
-    this.localAccountsCache.set(userId, userAccounts);
-
+    this.saveToLocalCache(accountState);
     return accountState;
+  }
+
+  public saveToLocalCache(account: EmailAccountState) {
+    const userAccounts = this.localAccountsCache.get(account.userId) || [];
+    const existingIndex = userAccounts.findIndex(a => a.id === account.id);
+    if (account.isDefault) {
+      userAccounts.forEach(a => { a.isDefault = false; });
+    }
+    if (existingIndex >= 0) {
+      userAccounts[existingIndex] = account;
+    } else {
+      userAccounts.push(account);
+    }
+    this.localAccountsCache.set(account.userId, userAccounts);
   }
 
   // 4. PostgreSQL Refresh Token Execution
@@ -314,7 +310,7 @@ export class EmailOAuthService {
     return newAccessToken;
   }
 
-  // 5. Send Test Email (Calls Real Provider API or FAILS with NOT_CONFIGURED)
+  // 5. Send Test Email (Calls Real Provider API or FAILS)
   public async sendTestEmail(userId: string, userVerifiedEmail: string, accountId?: string): Promise<{ success: boolean; messageId: string | null }> {
     const accounts = await this.getAccountsForUser(userId);
     const account = (accountId ? accounts.find(a => a.id === accountId) : null) || accounts.find(a => a.isDefault) || accounts[0];
@@ -323,14 +319,11 @@ export class EmailOAuthService {
       throw new Error('NOT_CONFIGURED: No active, connected Gmail or Outlook OAuth account found.');
     }
 
-    // Default recipient MUST be authenticated user's verified email
     const recipient = userVerifiedEmail || account.emailAddress;
     const subject = 'JobHunter AI Outreach Connection Test';
     const body = 'This is an automated connection test sent from your JobHunter AI platform to verify email dispatch connectivity.';
 
     let rawToken = tokenEncryption.decryptToken(account.encryptedAccessToken);
-    
-    // Auto-refresh token if expired
     if (account.expiresAt && new Date(account.expiresAt).getTime() <= Date.now()) {
       rawToken = await this.refreshAccessToken(account);
     }
@@ -357,7 +350,7 @@ export class EmailOAuthService {
     };
   }
 
-  // 6. Approved Recruiter Outreach Dispatcher
+  // 6. Approved Recruiter Outreach Dispatcher (Persisted to PostgreSQL)
   public async dispatchApprovedOutreach(userId: string, messageId: string): Promise<EmailDispatchLogDTO> {
     const queuedEmail = queuedEmailsMap.get(messageId);
 
@@ -374,7 +367,7 @@ export class EmailOAuthService {
       throw new Error('Approval Required: Recruiter outreach email has not been approved by user');
     }
 
-    // Idempotency / Duplicate Prevention Check
+    // Idempotency / Duplicate Protection Check
     if (queuedEmail.sentAt) {
       throw new Error('Duplicate Protection: Outreach email has already been dispatched');
     }
@@ -411,8 +404,24 @@ export class EmailOAuthService {
         externalId = await this.sendViaMicrosoftGraphApi(rawToken, recipient, queuedEmail.subject, queuedEmail.body);
       }
 
-      // Successful send: record SENT log
-      queuedEmail.sentAt = new Date().toISOString();
+      const nowStr = new Date().toISOString();
+      queuedEmail.sentAt = nowStr;
+
+      // Persist successful dispatch to PostgreSQL via Prisma
+      await emailRepository.recordDispatchMessage({
+        id: messageId,
+        accountId: account.id,
+        recruiterId: queuedEmail.recruiterId,
+        applicationId: queuedEmail.jobId,
+        subject: queuedEmail.subject,
+        body: queuedEmail.body,
+        isApproved: true,
+        approvedAt: new Date(),
+        sentAt: new Date(nowStr),
+        status: 'SENT',
+        externalMessageId: externalId,
+        failureReason: null
+      });
 
       const dispatchLog: EmailDispatchLogDTO = {
         id: `dispatch-${Date.now()}`,
@@ -421,16 +430,36 @@ export class EmailOAuthService {
         recipient,
         subject: queuedEmail.subject,
         provider: account.provider,
-        externalMessageId: externalId || 'SENT_CONFIRMED',
+        externalMessageId: externalId,
         sentAt: queuedEmail.sentAt,
-        status: 'SENT'
+        status: 'SENT',
+        failureReason: null
       };
 
       this.dispatchLogs.push(dispatchLog);
       return dispatchLog;
 
     } catch (err: any) {
-      // Failed send: NEVER set sentAt, NEVER report as SENT
+      const nowStr = new Date().toISOString();
+      const sanitizedReason = err.message || 'Provider HTTP request failed';
+
+      // Persist failed dispatch to PostgreSQL via Prisma (sentAt = null, externalMessageId = null)
+      await emailRepository.recordDispatchMessage({
+        id: messageId,
+        accountId: account.id,
+        recruiterId: queuedEmail.recruiterId,
+        applicationId: queuedEmail.jobId,
+        subject: queuedEmail.subject,
+        body: queuedEmail.body,
+        isApproved: true,
+        approvedAt: new Date(),
+        sentAt: undefined,
+        failedAt: new Date(nowStr),
+        status: 'FAILED',
+        externalMessageId: null,
+        failureReason: sanitizedReason
+      });
+
       const failedLog: EmailDispatchLogDTO = {
         id: `dispatch-failed-${Date.now()}`,
         userId,
@@ -438,22 +467,20 @@ export class EmailOAuthService {
         recipient,
         subject: queuedEmail.subject,
         provider: account.provider,
-        externalMessageId: '',
-        sentAt: '',
-        status: 'FAILED'
+        externalMessageId: null,
+        sentAt: null,
+        failedAt: nowStr,
+        status: 'FAILED',
+        failureReason: sanitizedReason
       };
 
       this.dispatchLogs.push(failedLog);
-      throw new Error(`Email Dispatch Failed: ${err.message || 'Provider request rejected'}`);
+      throw new Error(`Email Dispatch Failed: ${sanitizedReason}`);
     }
   }
 
   // Real Gmail API Sender (Returns actual data.id or throws error)
   private async sendViaGmailApi(accessToken: string, to: string, subject: string, body: string): Promise<string> {
-    if (accessToken.startsWith('test-access-token-')) {
-      return `gmail-test-msg-${Date.now()}`;
-    }
-
     const rawMessage = [
       `To: ${to}`,
       'Content-Type: text/plain; charset=utf-8',
@@ -487,12 +514,8 @@ export class EmailOAuthService {
     return data.id; // Actual provider message ID
   }
 
-  // Real Microsoft Graph API Sender
+  // Real Microsoft Graph API Sender (HTTP 202 Accepted -> externalMessageId = null)
   private async sendViaMicrosoftGraphApi(accessToken: string, to: string, subject: string, body: string): Promise<string | null> {
-    if (accessToken.startsWith('test-access-token-')) {
-      return null;
-    }
-
     const res = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
       method: 'POST',
       headers: {
@@ -514,7 +537,7 @@ export class EmailOAuthService {
       throw new Error(`Microsoft Graph HTTP ${res.status}: ${errText}`);
     }
 
-    // Graph sendMail returns 202 Accepted without body ID -> return null (no fake IDs)
+    // Graph sendMail returns 202 Accepted without body ID -> return null (no synthetic IDs)
     return null;
   }
 

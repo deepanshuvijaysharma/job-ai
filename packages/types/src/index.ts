@@ -260,7 +260,9 @@ export interface EmailDispatchLogDTO {
   recipient: string;
   subject: string;
   provider: string;
-  externalMessageId: string;
-  sentAt: string;
+  externalMessageId: string | null;
+  sentAt?: string | null;
+  failedAt?: string | null;
   status: 'SENT' | 'FAILED' | 'PENDING';
+  failureReason?: string | null;
 }
