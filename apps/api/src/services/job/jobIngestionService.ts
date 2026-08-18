@@ -103,11 +103,11 @@ export class JobMatchingEngine {
     return {
       overallScore: adv.overallScore,
       priority: adv.priority,
-      skillMatch: adv.breakdown.skillScore,
+      skillMatch: adv.breakdown.requiredSkillScore,
       experienceMatch: adv.breakdown.experienceScore,
       roleMatch: adv.breakdown.roleScore,
       locationMatch: adv.breakdown.locationScore,
-      salaryMatch: adv.breakdown.salaryScore,
+      salaryMatch: adv.breakdown.salaryScore ?? 85,
       educationMatch: adv.breakdown.educationScore,
       resumeKeywordMatch: adv.breakdown.resumeScore,
       projectMatch: adv.breakdown.projectScore,

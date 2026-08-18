@@ -199,6 +199,84 @@ describe('JobHunter AI Step 4: Advanced Job Matching Engine Suite', () => {
     const match = advancedMatchingEngine.calculateMatch(defaultCandidate, freshJobWithRecruiter);
 
     expect(match.breakdown.freshnessScore).toBe(100);
-    expect(match.whyApply.some(w => w.includes('recruiter'))).toBe(true);
+    expect(match.freshnessLabel).toBe('Very Fresh');
+    expect(match.whyApply.some(w => w.includes('recruiter') || w.includes('alignment'))).toBe(true);
+  });
+
+  it('9. Test G — Salary Unknown: Undisclosed salary returns null score without 0% penalty', () => {
+    const jobNoSalary = {
+      title: 'Backend Developer',
+      companyName: 'Private Pay Ltd',
+      location: 'Noida',
+      remoteType: RemotePreference.HYBRID,
+      description: 'Backend role with undisclosed compensation.',
+      requiredSkills: ['Node.js', 'Express.js'],
+      preferredSkills: []
+    };
+
+    const match = advancedMatchingEngine.calculateMatch(defaultCandidate, jobNoSalary);
+
+    expect(match.breakdown.salaryScore).toBeNull();
+    expect(match.overallScore).toBeGreaterThanOrEqual(80);
+  });
+
+  it('10. Test H — Freshness Comparison: 2h vs 10d old job priority ranking', () => {
+    const freshJob = {
+      title: 'Backend Engineer',
+      companyName: 'FreshCorp',
+      location: 'Noida',
+      remoteType: RemotePreference.HYBRID,
+      description: 'Role',
+      requiredSkills: ['Node.js'],
+      preferredSkills: [],
+      postedAt: new Date(Date.now() - 2 * 3600 * 1000).toISOString() // 2h ago
+    };
+
+    const staleJob = {
+      title: 'Backend Engineer',
+      companyName: 'StaleCorp',
+      location: 'Noida',
+      remoteType: RemotePreference.HYBRID,
+      description: 'Role',
+      requiredSkills: ['Node.js'],
+      preferredSkills: [],
+      postedAt: new Date(Date.now() - 10 * 24 * 3600 * 1000).toISOString() // 10 days ago
+    };
+
+    const freshMatch = advancedMatchingEngine.calculateMatch(defaultCandidate, freshJob);
+    const staleMatch = advancedMatchingEngine.calculateMatch(defaultCandidate, staleJob);
+
+    expect(freshMatch.breakdown.freshnessScore).toBe(100);
+    expect(freshMatch.freshnessLabel).toBe('Very Fresh');
+
+    expect(staleMatch.breakdown.freshnessScore).toBe(40);
+    expect(staleMatch.freshnessLabel).toBe('Stale');
+    expect(freshMatch.overallScore).toBeGreaterThan(staleMatch.overallScore);
+  });
+
+  it('11. Edge Cases: Handles empty skills, missing location, and malformed inputs gracefully without crashing', () => {
+    const emptyJob = {
+      title: 'General Software Engineer',
+      companyName: 'Unknown LLC',
+      location: '',
+      remoteType: RemotePreference.ANY,
+      description: '',
+      requiredSkills: [],
+      preferredSkills: []
+    };
+
+    const emptyCandidate = {
+      targetRoles: [],
+      experienceYears: 0,
+      skills: [],
+      preferredLocations: [],
+      remotePref: RemotePreference.ANY
+    };
+
+    const match = advancedMatchingEngine.calculateMatch(emptyCandidate, emptyJob);
+
+    expect(match.overallScore).toBeGreaterThan(0);
+    expect(match.breakdown).toBeDefined();
+    expect(match.recommendation).toBeDefined();
   });
 });

@@ -132,11 +132,11 @@ export class JobDiscoveryManager {
             overallScore: matchResult.overallScore,
             priority: matchResult.priority,
             breakdown: {
-              skillMatch: matchResult.breakdown.skillScore,
+              skillMatch: matchResult.breakdown.requiredSkillScore,
               experienceMatch: matchResult.breakdown.experienceScore,
               roleMatch: matchResult.breakdown.roleScore,
               locationMatch: matchResult.breakdown.locationScore,
-              salaryMatch: matchResult.breakdown.salaryScore,
+              salaryMatch: matchResult.breakdown.salaryScore ?? 85,
               educationMatch: matchResult.breakdown.educationScore,
               resumeKeywordMatch: matchResult.breakdown.resumeScore,
               projectMatch: matchResult.breakdown.projectScore
