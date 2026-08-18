@@ -1,34 +1,54 @@
 import { JobDTO, ResumeDTO, ResumeMatchScoreDTO } from '@jobhunter/types';
+import { normalizeSkillName } from '../skill/skillNormalizationService';
+
+export interface DetailedResumeMatchExplanation {
+  resumeId: string;
+  resumeTitle: string;
+  targetRole: string;
+  matchScore: number;
+  isRecommended: boolean;
+  explanation: {
+    matchedSkills: string[];
+    partialSkills: string[];
+    missingSkills: string[];
+    relevantProjects: string[];
+    roleAlignment: 'Strong' | 'Moderate' | 'Weak';
+    recommendationReason: string;
+  };
+}
 
 export class MultiResumeMatcherService {
   /**
    * Evaluate candidate's multiple resume versions against a target job position
-   * returns scores for all resumes, e.g.:
-   * Backend Resume: 94% (Recommended)
-   * Full Stack Resume: 87%
-   * Frontend Resume: 61%
+   * returns explainable scores for all resumes, e.g.:
+   * Backend Resume — 94% (Recommended)
+   * Matched: Node.js, Express, SQL
+   * Missing: AWS
    */
   public evaluateResumesForJob(resumes: ResumeDTO[], job: JobDTO): {
-    bestMatch: ResumeMatchScoreDTO | null;
-    allMatches: ResumeMatchScoreDTO[];
+    bestMatch: DetailedResumeMatchExplanation | null;
+    allMatches: DetailedResumeMatchExplanation[];
   } {
     if (!resumes || resumes.length === 0) {
       return { bestMatch: null, allMatches: [] };
     }
 
     const jobTitleLower = job.title.toLowerCase();
-    const jobSkillsLower = (job.requiredSkills || []).map(s => s.toLowerCase());
+    const requiredSkillsNormalized = (job.requiredSkills || []).map(s => normalizeSkillName(s));
+    const preferredSkillsNormalized = (job.preferredSkills || []).map(s => normalizeSkillName(s));
 
-    const matches: ResumeMatchScoreDTO[] = resumes.map(resume => {
+    const matches: DetailedResumeMatchExplanation[] = resumes.map(resume => {
       const resumeTitleLower = (resume.title || '').toLowerCase();
       const targetRoleLower = (resume.targetRole || resume.title || '').toLowerCase();
 
-      // Extract skills from resume object or parsedData
-      const resumeSkills: string[] = resume.skills || resume.parsedData?.skills?.map((s: any) => s.name) || [];
-      const resumeSkillsLower = resumeSkills.map(s => s.toLowerCase());
+      // Extract and normalize skills
+      const rawResumeSkills: string[] = resume.skills || resume.parsedData?.skills?.map((s: any) => s.name || s) || [];
+      const resumeSkillsNormalized = rawResumeSkills.map(s => normalizeSkillName(s));
 
-      // 1. Target Role & Title Alignment Score (Max 35 points)
+      // 1. Role Alignment (Max 35 points)
       let roleScore = 15;
+      let roleAlignment: 'Strong' | 'Moderate' | 'Weak' = 'Weak';
+
       if (
         (jobTitleLower.includes('backend') && (resumeTitleLower.includes('backend') || targetRoleLower.includes('backend'))) ||
         (jobTitleLower.includes('full stack') && (resumeTitleLower.includes('full stack') || targetRoleLower.includes('full stack'))) ||
@@ -37,32 +57,45 @@ export class MultiResumeMatcherService {
         (jobTitleLower.includes('support') && (resumeTitleLower.includes('support') || targetRoleLower.includes('support')))
       ) {
         roleScore = 35;
-      } else if (jobTitleLower.includes('full stack') && resumeTitleLower.includes('backend')) {
-        roleScore = 28;
-      } else if (jobTitleLower.includes('backend') && resumeTitleLower.includes('full stack')) {
-        roleScore = 28;
-      } else if (jobTitleLower.includes('frontend') && resumeTitleLower.includes('full stack')) {
-        roleScore = 25;
+        roleAlignment = 'Strong';
+      } else if (
+        (jobTitleLower.includes('full stack') && resumeTitleLower.includes('backend')) ||
+        (jobTitleLower.includes('backend') && resumeTitleLower.includes('full stack')) ||
+        (jobTitleLower.includes('frontend') && resumeTitleLower.includes('full stack'))
+      ) {
+        roleScore = 27;
+        roleAlignment = 'Moderate';
       }
 
-      // 2. Tech Skills Overlap (Max 45 points)
-      let matchingSkillsCount = 0;
-      const matchingSkills: string[] = [];
-      jobSkillsLower.forEach(js => {
-        if (resumeSkillsLower.some(rs => rs.includes(js) || js.includes(rs))) {
-          matchingSkillsCount++;
-          matchingSkills.push(js);
+      // 2. Tech Skills Overlap Breakdown (Max 45 points)
+      const matchedSkills: string[] = [];
+      const partialSkills: string[] = [];
+      const missingSkills: string[] = [];
+
+      requiredSkillsNormalized.forEach(reqSkill => {
+        if (resumeSkillsNormalized.includes(reqSkill)) {
+          matchedSkills.push(reqSkill);
+        } else if (resumeSkillsNormalized.some(rs => rs.includes(reqSkill) || reqSkill.includes(rs))) {
+          partialSkills.push(reqSkill);
+        } else {
+          missingSkills.push(reqSkill);
         }
       });
 
-      const skillRatio = jobSkillsLower.length > 0 ? matchingSkillsCount / jobSkillsLower.length : 0.8;
-      const skillScore = Math.round(skillRatio * 45);
+      const matchedRatio = requiredSkillsNormalized.length > 0
+        ? (matchedSkills.length + partialSkills.length * 0.5) / requiredSkillsNormalized.length
+        : 0.8;
 
-      // 3. Keyword / Project Alignment (Max 20 points)
-      const keywordScore = resume.keywords && resume.keywords.length > 0 ? 18 : 12;
+      const skillScore = Math.round(matchedRatio * 45);
+
+      // 3. Relevant Projects (Max 20 points)
+      const projects = (resume.projects || resume.parsedData?.projects || []).map((p: any) => p.title || p.name || 'Project');
+      const keywordScore = projects.length > 0 ? 18 : 12;
 
       const rawTotal = roleScore + skillScore + keywordScore;
       const matchScore = Math.min(98, Math.max(40, rawTotal));
+
+      const recommendationReason = `Highest required-skill coverage (${matchedSkills.length}/${requiredSkillsNormalized.length} skills matched) and ${roleAlignment.toLowerCase()} role alignment.`;
 
       return {
         resumeId: resume.id,
@@ -70,11 +103,18 @@ export class MultiResumeMatcherService {
         targetRole: resume.targetRole || 'General Developer',
         matchScore,
         isRecommended: false,
-        keyMatchingSkills: matchingSkills
+        explanation: {
+          matchedSkills,
+          partialSkills,
+          missingSkills,
+          relevantProjects: projects.slice(0, 2),
+          roleAlignment,
+          recommendationReason
+        }
       };
     });
 
-    // Sort by match score descending
+    // Sort by matchScore descending
     matches.sort((a, b) => b.matchScore - a.matchScore);
 
     if (matches.length > 0) {

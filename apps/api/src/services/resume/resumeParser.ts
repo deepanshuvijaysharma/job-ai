@@ -1,18 +1,29 @@
 import { aiManager } from '../ai/aiProvider';
 import { SkillProficiencyLevel } from '@jobhunter/types';
+import { normalizeSkillName } from '../skill/skillNormalizationService';
+
+export interface ExtractedSkillWithConfidence {
+  name: string;
+  normalizedName: string;
+  yearsExperience: number;
+  proficiency: SkillProficiencyLevel;
+  confidence: 'HIGH' | 'MEDIUM' | 'LOW';
+  evidence: 'resume' | 'work_experience' | 'project' | 'certification' | 'user_entered';
+  isProfessionalExperience: boolean;
+}
 
 export interface ParsedResumeResult {
-  skills: Array<{ name: string; yearsExperience: number; proficiency: SkillProficiencyLevel }>;
+  skills: ExtractedSkillWithConfidence[];
   experienceYears: number;
   currentRole: string;
   targetRoles: string[];
   secondaryRoles: string[];
-  education: Array<{ degree: string; field: string; institution: string; year?: number }>;
-  certifications: string[];
+  education: Array<{ degree: string; field: string; institution: string; year?: number; educationLevel?: string }>;
+  certifications: Array<{ name: string; issuingOrganization?: string; issueDate?: string; expiryDate?: string }>;
   keywords: string[];
   achievements: string[];
-  projects: Array<{ title: string; description: string; techStack: string[] }>;
-  workExperience: Array<{ company: string; role: string; duration: string; description: string }>;
+  projects: Array<{ title: string; description: string; techStack: string[]; githubUrl?: string; liveUrl?: string }>;
+  workExperience: Array<{ company: string; role: string; duration: string; description: string; technologies?: string[] }>;
   aiProfileAnalysis: {
     strongSkills: string[];
     weakSkills: string[];
@@ -31,24 +42,40 @@ export class ResumeParserService {
 
     const systemPrompt = `You are a Senior Tech Recruiter and AI Resume Intelligence Specialist.
 Analyze the candidate's raw resume text and output a JSON object containing:
-- skills: array of objects { name, yearsExperience, proficiency } where proficiency MUST be one of ["STRONG", "INTERMEDIATE", "BASIC", "LEARNING"]. RULE: Never infer "STRONG" unless the candidate demonstrates multi-year leadership or extensive usage in multiple projects/roles.
+- skills: array of objects { name, yearsExperience, proficiency, confidence, evidence, isProfessionalExperience } where:
+  * proficiency MUST be one of ["STRONG", "INTERMEDIATE", "BASIC", "LEARNING"]. RULE: Never infer "STRONG" unless candidate demonstrates multi-year commercial usage or leadership.
+  * confidence MUST be one of ["HIGH", "MEDIUM", "LOW"].
+  * evidence MUST be one of ["resume", "work_experience", "project", "certification"].
+  * isProfessionalExperience: boolean (false if skill only used in personal projects).
 - experienceYears: number
 - currentRole: string
 - targetRoles: string[]
 - secondaryRoles: string[]
-- education: array of objects { degree, field, institution, year }
-- certifications: string[]
+- education: array of objects { degree, field, institution, year, educationLevel }
+- certifications: array of objects { name, issuingOrganization, issueDate, expiryDate }
 - keywords: string[]
 - achievements: string[]
-- projects: array of objects { title, description, techStack }
-- workExperience: array of objects { company, role, duration, description }
+- projects: array of objects { title, description, techStack, githubUrl, liveUrl }
+- workExperience: array of objects { company, role, duration, description, technologies }
 - aiProfileAnalysis: { strongSkills, weakSkills, missingSkills, marketableSkills, competitiveRoles, lowProbabilityRoles }
 
-Do NOT invent experience or skills not mentioned in the resume. Return ONLY valid JSON.`;
+Do NOT invent experience or skills not present in text. If information is missing, use null or "UNKNOWN". Return ONLY valid JSON.`;
 
-    const userPrompt = `Resume Title: ${resumeTitle}\n\nResume Raw Content:\n${rawText}`;
+    const userPrompt = `Resume Title: ${resumeTitle}\n\nResume Content:\n${rawText}`;
 
-    return aiManager.completeJSON<ParsedResumeResult>(systemPrompt, userPrompt, () => this.heuristicFallbackParse(rawText, resumeTitle));
+    const parsed = await aiManager.completeJSON<ParsedResumeResult>(
+      systemPrompt, 
+      userPrompt, 
+      () => this.heuristicFallbackParse(rawText, resumeTitle)
+    );
+
+    // Normalize all skill names
+    parsed.skills = (parsed.skills || []).map(s => ({
+      ...s,
+      normalizedName: normalizeSkillName(s.name)
+    }));
+
+    return parsed;
   }
 
   private emptyResult(resumeTitle: string): ParsedResumeResult {
@@ -87,7 +114,7 @@ Do NOT invent experience or skills not mentioned in the resume. Return ONLY vali
       'SQL', 'Python', 'REST API', 'Docker', 'AWS', 'HTML', 'CSS', 'Redux', 'Git', 'Java', 'C++', 'GraphQL'
     ];
 
-    const detectedSkills: Array<{ name: string; yearsExperience: number; proficiency: SkillProficiencyLevel }> = [];
+    const detectedSkills: ExtractedSkillWithConfidence[] = [];
 
     techKeywords.forEach(kw => {
       const regex = new RegExp(`\\b${kw.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, 'gi');
@@ -103,20 +130,25 @@ Do NOT invent experience or skills not mentioned in the resume. Return ONLY vali
           proficiency = 'LEARNING';
         }
 
+        const isWork = textLower.includes('work') || textLower.includes('experience') || textLower.includes('company');
+
         detectedSkills.push({
           name: kw,
+          normalizedName: normalizeSkillName(kw),
           yearsExperience: matches.length >= 3 ? 3.0 : 1.5,
-          proficiency
+          proficiency,
+          confidence: matches.length >= 2 ? 'HIGH' : 'MEDIUM',
+          evidence: isWork ? 'work_experience' : 'project',
+          isProfessionalExperience: isWork
         });
       }
     });
 
-    // Identify target roles based on title and content
     let targetRoles = ['Backend Developer'];
     let secondaryRoles = ['Full Stack Developer'];
 
     const titleLower = resumeTitle.toLowerCase();
-    if (titleLower.includes('frontend') || textLower.includes('react.js')) {
+    if (titleLower.includes('frontend') || textLower.includes('react')) {
       targetRoles = ['Frontend Developer', 'React.js Developer'];
       secondaryRoles = ['Full Stack Developer'];
     } else if (titleLower.includes('full stack') || titleLower.includes('fullstack')) {
@@ -130,8 +162,8 @@ Do NOT invent experience or skills not mentioned in the resume. Return ONLY vali
       secondaryRoles = ['IT Specialist'];
     }
 
-    const keywords = detectedSkills.map(s => s.name);
-    const strongSkills = detectedSkills.filter(s => s.proficiency === 'STRONG').map(s => s.name);
+    const keywords = detectedSkills.map(s => s.normalizedName);
+    const strongSkills = detectedSkills.filter(s => s.proficiency === 'STRONG').map(s => s.normalizedName);
 
     return {
       skills: detectedSkills,
@@ -140,9 +172,9 @@ Do NOT invent experience or skills not mentioned in the resume. Return ONLY vali
       targetRoles,
       secondaryRoles,
       education: textLower.includes('b.tech') || textLower.includes('bachelor')
-        ? [{ degree: 'B.Tech', field: 'Computer Science & Engineering', institution: 'University', year: 2023 }]
+        ? [{ degree: 'B.Tech', field: 'Computer Science & Engineering', institution: 'University', year: 2023, educationLevel: 'BACHELORS' }]
         : [],
-      certifications: textLower.includes('aws') ? ['AWS Certified Developer'] : [],
+      certifications: textLower.includes('aws') ? [{ name: 'AWS Certified Developer', issuingOrganization: 'Amazon Web Services' }] : [],
       keywords,
       achievements: textLower.includes('optimized') ? ['Optimized API throughput and reduced query latency by 40%'] : [],
       projects: detectedSkills.length > 0 ? [
