@@ -204,13 +204,11 @@ export class DailyStrategyEngine {
       stats.applications += 1;
 
       if ([
-        ApplicationStatus.RECRUITER_CONTACTED, 
         ApplicationStatus.RECRUITER_RESPONDED, 
         ApplicationStatus.INTERVIEW_SCHEDULED, 
         ApplicationStatus.TECHNICAL_ROUND, 
         ApplicationStatus.HR_ROUND, 
-        ApplicationStatus.OFFER,
-        ApplicationStatus.REJECTED
+        ApplicationStatus.OFFER
       ].includes(app.status)) {
         stats.responses += 1;
       }
@@ -253,7 +251,6 @@ export class DailyStrategyEngine {
       stats.applications += 1;
 
       if ([
-        ApplicationStatus.RECRUITER_CONTACTED, 
         ApplicationStatus.RECRUITER_RESPONDED, 
         ApplicationStatus.INTERVIEW_SCHEDULED, 
         ApplicationStatus.TECHNICAL_ROUND, 
@@ -301,7 +298,6 @@ export class DailyStrategyEngine {
       stats.applications += 1;
 
       if ([
-        ApplicationStatus.RECRUITER_CONTACTED, 
         ApplicationStatus.RECRUITER_RESPONDED, 
         ApplicationStatus.INTERVIEW_SCHEDULED, 
         ApplicationStatus.TECHNICAL_ROUND, 
@@ -405,15 +401,13 @@ export class DailyStrategyEngine {
     const jobsList = Array.from(memoryStore.jobs.values());
     const approvedOutreach = Array.from(queuedEmailsMap.values()).filter(m => m.userId === userId && m.isApproved);
     
-    // Pure Database Counts
+    // Pure Database Counts (Genuine Inbound Responses Only)
     const responsesCount = userApps.filter(a => [
-      ApplicationStatus.RECRUITER_CONTACTED,
       ApplicationStatus.RECRUITER_RESPONDED,
       ApplicationStatus.INTERVIEW_SCHEDULED,
       ApplicationStatus.TECHNICAL_ROUND,
       ApplicationStatus.HR_ROUND,
-      ApplicationStatus.OFFER,
-      ApplicationStatus.REJECTED
+      ApplicationStatus.OFFER
     ].includes(a.status) && approvedOutreach.some(o => o.jobId === a.jobId)).length;
 
     const interviewsCount = userApps.filter(a => [

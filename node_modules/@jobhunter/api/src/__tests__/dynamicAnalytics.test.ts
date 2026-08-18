@@ -78,13 +78,13 @@ describe('JobHunter AI Step 1: Real Dynamic Analytics Verification Suite', () =>
     expect(analyticsRes.body.funnel.applications).toBe(1);
     expect(analyticsRes.body.metrics.appToResponseRate).toBe(0);
 
-    // Advance status to RECRUITER_CONTACTED
+    // Advance status to RECRUITER_RESPONDED
     await request(app)
       .post('/api/applications/status')
       .set('Authorization', `Bearer ${authToken}`)
       .send({
         jobId: job.id,
-        status: 'RECRUITER_CONTACTED'
+        status: 'RECRUITER_RESPONDED'
       });
 
     analyticsRes = await request(app)

@@ -246,4 +246,35 @@ describe('JobHunter AI Step 1: Dynamic Pure Database Analytics Test Suite', () =
     expect(weeklyRes.body.topPerformers.bestCompanyType).toBe('insufficient_data');
     expect(weeklyRes.body.recommendationsNextWeek[0]).toContain('minimum 5 applications required');
   });
+
+  it('8. Strict Inbound Response Rules: RECRUITER_CONTACTED and REJECTED produce Response = 0', async () => {
+    // Application 1: Outbound email sent (RECRUITER_CONTACTED)
+    memoryStore.applications.set('demo-user-123_job-c1', {
+      id: 'app-c1',
+      userId: 'demo-user-123',
+      jobId: 'job-c1',
+      status: ApplicationStatus.RECRUITER_CONTACTED,
+      qualityScore: 90,
+      createdAt: new Date().toISOString()
+    });
+
+    // Application 2: Rejection notice (REJECTED)
+    memoryStore.applications.set('demo-user-123_job-r1', {
+      id: 'app-r1',
+      userId: 'demo-user-123',
+      jobId: 'job-r1',
+      status: ApplicationStatus.REJECTED,
+      qualityScore: 85,
+      createdAt: new Date().toISOString()
+    });
+
+    const res = await request(app)
+      .get('/api/analytics/dashboard')
+      .set('Authorization', `Bearer ${authToken}`);
+
+    expect(res.body.funnel.applications).toBe(2);
+    expect(res.body.funnel.recruiterConversations).toBe(0); // MUST BE 0! Neither is an inbound response.
+    expect(res.body.funnel.interviews).toBe(0);
+    expect(res.body.metrics.appToResponseRate).toBe(0);
+  });
 });

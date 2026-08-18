@@ -43,7 +43,6 @@ export const getAnalyticsDashboard = async (req: AuthenticatedRequest, res: Resp
   const recruiterOutreachSent = approvedOutreach.length;
 
   const recruiterConversationsCount = userApps.filter(a => 
-    a.status === ApplicationStatus.RECRUITER_CONTACTED || 
     a.status === ApplicationStatus.RECRUITER_RESPONDED ||
     a.status === ApplicationStatus.INTERVIEW_SCHEDULED ||
     a.status === ApplicationStatus.TECHNICAL_ROUND ||
