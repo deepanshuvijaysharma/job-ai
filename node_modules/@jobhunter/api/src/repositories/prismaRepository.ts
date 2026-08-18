@@ -52,6 +52,21 @@ const executeWithFastTimeout = async <T>(prismaFn: () => Promise<T>): Promise<T>
 // 1. User Repository
 // ==========================================
 export class UserRepository {
+  async checkDatabaseConnection(): Promise<boolean> {
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      isPrismaOnline = true;
+      return true;
+    } catch {
+      isPrismaOnline = false;
+      return false;
+    }
+  }
+
+  isAvailable(): boolean {
+    return isPrismaOnline !== false;
+  }
+
   async findById(id: string) {
     try {
       return await executeWithFastTimeout(() => prisma.user.findUnique({ where: { id } }));

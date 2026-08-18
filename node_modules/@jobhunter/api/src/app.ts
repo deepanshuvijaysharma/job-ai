@@ -38,9 +38,42 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '10mb' }));
 
-// Health Check
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', service: 'JobHunter AI Engine API', timestamp: new Date().toISOString() });
+import { userRepository } from './repositories/prismaRepository';
+
+// Health & Readiness Check
+app.get('/api/health', async (req, res) => {
+  let dbConnected = true;
+  let dbError: string | undefined;
+
+  if (process.env.DATABASE_URL) {
+    try {
+      await userRepository.checkDatabaseConnection();
+      dbConnected = userRepository.isAvailable();
+      if (!dbConnected) {
+        dbError = 'PostgreSQL database connection unavailable';
+      }
+    } catch (err) {
+      dbConnected = false;
+      dbError = (err as Error).message;
+    }
+  }
+
+  if (process.env.NODE_ENV === 'production' && process.env.DATABASE_URL && !dbConnected) {
+    return res.status(503).json({
+      status: 'error',
+      service: 'JobHunter AI Engine API',
+      timestamp: new Date().toISOString(),
+      dbConnected: false,
+      error: dbError || 'Database readiness check failed'
+    });
+  }
+
+  return res.json({
+    status: 'ok',
+    service: 'JobHunter AI Engine API',
+    timestamp: new Date().toISOString(),
+    dbConnected
+  });
 });
 
 // API Routes

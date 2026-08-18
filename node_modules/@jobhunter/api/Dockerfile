@@ -15,6 +15,15 @@ RUN npm run build --workspace=packages/types
 RUN npm run build --workspace=packages/database
 RUN npm run build --workspace=apps/api
 
+FROM node:20-alpine AS runner
+
+WORKDIR /app
+
+COPY --from=builder /app ./
+
+RUN chmod +x /app/apps/api/docker-entrypoint.sh
+
 EXPOSE 5000
 
+ENTRYPOINT ["/bin/sh", "/app/apps/api/docker-entrypoint.sh"]
 CMD ["node", "apps/api/dist/server.js"]
