@@ -5,6 +5,7 @@ import { apiClient } from '../services/apiClient';
 export const RecruiterOutreachPage: React.FC = () => {
   const [queueData, setQueueData] = useState<any>(null);
   const [followups, setFollowups] = useState<any[]>([]);
+  const [accounts, setAccounts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [editingMsg, setEditingMsg] = useState<any | null>(null);
@@ -13,12 +14,14 @@ export const RecruiterOutreachPage: React.FC = () => {
   const fetchOutreachData = async () => {
     try {
       setLoading(true);
-      const [qRes, fRes] = await Promise.all([
+      const [qRes, fRes, accRes] = await Promise.all([
         apiClient.get('/outreach/approval-queue'),
-        apiClient.get('/outreach/followups')
+        apiClient.get('/outreach/followups'),
+        apiClient.get('/email/accounts')
       ]);
       setQueueData(qRes.data);
       setFollowups(fRes.data);
+      setAccounts(accRes.data || []);
     } catch (err) {
       console.error('Failed to load outreach data', err);
     } finally {
@@ -30,9 +33,37 @@ export const RecruiterOutreachPage: React.FC = () => {
     fetchOutreachData();
   }, []);
 
+  const handleConnectGmail = async () => {
+    try {
+      const res = await apiClient.get('/email/oauth/gmail/url');
+      if (res.data.url) window.location.href = res.data.url;
+    } catch (err) {
+      console.error('Failed to get Gmail auth URL', err);
+    }
+  };
+
+  const handleConnectOutlook = async () => {
+    try {
+      const res = await apiClient.get('/email/oauth/outlook/url');
+      if (res.data.url) window.location.href = res.data.url;
+    } catch (err) {
+      console.error('Failed to get Outlook auth URL', err);
+    }
+  };
+
+  const handleDisconnect = async (accId: string) => {
+    try {
+      await apiClient.delete(`/email/accounts/${accId}`);
+      fetchOutreachData();
+    } catch (err) {
+      console.error('Failed to disconnect account', err);
+    }
+  };
+
   const handleApprove = async (msgId: string) => {
     try {
       await apiClient.post('/outreach/approve', { messageIds: [msgId] });
+      await apiClient.post('/email/dispatch', { messageId: msgId });
       fetchOutreachData();
     } catch (err) {
       console.error('Failed to approve message', err);
@@ -109,6 +140,61 @@ export const RecruiterOutreachPage: React.FC = () => {
         <div>
           <span className="font-bold">Human Approval Enforced:</span> No email is ever sent without your explicit review and confirmation. Rate limits prevent mass spam and protect recruiter reputation.
         </div>
+      </div>
+
+      {/* Connected Email Accounts Panel */}
+      <div className="bg-dark-800 border border-slate-800 p-5 rounded-2xl space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-bold text-white flex items-center space-x-2">
+            <Mail className="w-4 h-4 text-brand-400" />
+            <span>Connected Email Accounts (Gmail / Outlook OAuth)</span>
+          </h2>
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={handleConnectGmail}
+              className="px-3 py-1.5 bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition"
+            >
+              <span>+ Connect Gmail</span>
+            </button>
+            <button
+              onClick={handleConnectOutlook}
+              className="px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition"
+            >
+              <span>+ Connect Outlook</span>
+            </button>
+          </div>
+        </div>
+
+        {accounts.length === 0 ? (
+          <div className="text-xs text-slate-400 bg-dark-900/60 p-3 rounded-xl border border-slate-800/80">
+            No OAuth email accounts connected yet. Click above to connect your Gmail or Outlook account securely.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {accounts.map((acc: any) => (
+              <div key={acc.id} className="bg-dark-900 border border-slate-800 p-3.5 rounded-xl flex items-center justify-between text-xs">
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <span className="font-bold text-white">{acc.emailAddress}</span>
+                    <span className="px-2 py-0.5 bg-brand-500/10 text-brand-300 border border-brand-500/20 rounded-md text-[10px] uppercase font-bold">
+                      {acc.provider}
+                    </span>
+                  </div>
+                  <div className="text-[10px] text-emerald-400 mt-1 flex items-center space-x-1">
+                    <CheckCircle2 className="w-3 h-3" />
+                    <span>OAuth Connected & Encrypted</span>
+                  </div>
+                </div>
+                <button
+                  onClick={() => handleDisconnect(acc.id)}
+                  className="px-2.5 py-1 text-[11px] text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition"
+                >
+                  Disconnect
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Multi-Approve Bar */}

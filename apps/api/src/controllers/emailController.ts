@@ -86,3 +86,15 @@ export const dispatchApprovedEmail = async (req: AuthenticatedRequest, res: Resp
     return res.status(400).json({ error: err.message || 'Failed to dispatch approved email' });
   }
 };
+
+export const disconnectAccount = async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.user?.id || 'demo-user-123';
+  const { id } = req.params;
+
+  if (!id) {
+    return res.status(400).json({ error: 'Account ID parameter is required' });
+  }
+
+  const success = emailOAuthService.disconnectAccount(userId, id);
+  return res.json({ success, message: 'Email account disconnected successfully' });
+};

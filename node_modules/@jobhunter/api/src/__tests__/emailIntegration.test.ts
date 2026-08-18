@@ -93,7 +93,7 @@ describe('JobHunter AI Step 7: Gmail & Outlook Integration Suite', () => {
       recruiterRole: 'Technical Recruiter',
       subject: 'Outreach Subject',
       body: 'Hello Amit, ...',
-      templateType: 'INITIAL_OUTREACH' as OutreachTemplateType,
+      templateType: 'FIRST_CONTACT' as OutreachTemplateType,
       isApproved: false, // NOT APPROVED
       aiReasoning: 'Initial outreach',
       confidence: 0.94,
@@ -123,7 +123,7 @@ describe('JobHunter AI Step 7: Gmail & Outlook Integration Suite', () => {
       recruiterRole: 'Technical Recruiter',
       subject: 'Outreach Subject',
       body: 'Hello Amit, ...',
-      templateType: 'INITIAL_OUTREACH' as OutreachTemplateType,
+      templateType: 'FIRST_CONTACT' as OutreachTemplateType,
       isApproved: true, // EXPLICITLY APPROVED
       aiReasoning: 'Initial outreach',
       confidence: 0.94,
@@ -146,5 +146,22 @@ describe('JobHunter AI Step 7: Gmail & Outlook Integration Suite', () => {
 
     expect(secondDispatch.status).toBe(400);
     expect(secondDispatch.body.error).toContain('Duplicate Protection');
+  });
+
+  it('7. Account Disconnection API: Allows disconnecting an email account cleanly', async () => {
+    const accountsRes = await request(app)
+      .get('/api/email/accounts')
+      .set('Authorization', `Bearer ${authToken}`);
+
+    expect(accountsRes.status).toBe(200);
+    const accountId = accountsRes.body[0]?.id;
+    expect(accountId).toBeDefined();
+
+    const disconnectRes = await request(app)
+      .delete(`/api/email/accounts/${accountId}`)
+      .set('Authorization', `Bearer ${authToken}`);
+
+    expect(disconnectRes.status).toBe(200);
+    expect(disconnectRes.body.success).toBe(true);
   });
 });

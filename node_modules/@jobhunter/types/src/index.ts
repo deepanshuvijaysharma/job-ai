@@ -241,3 +241,26 @@ export interface AnalyticsDashboardDTO {
   yieldByRole: Array<{ role: string; applications: number; responses: number; rate: number }>;
   yieldBySource: Array<{ source: string; applications: number; interviews: number; rate: number }>;
 }
+
+export interface EmailAccountDTO {
+  id: string;
+  userId: string;
+  provider: 'gmail' | 'outlook' | 'smtp';
+  emailAddress: string;
+  isDefault: boolean;
+  isConnected: boolean;
+  lastTestedAt?: string;
+  createdAt: string;
+}
+
+export interface EmailDispatchLogDTO {
+  id: string;
+  userId: string;
+  messageId: string;
+  recipient: string;
+  subject: string;
+  provider: string;
+  externalMessageId: string;
+  sentAt: string;
+  status: 'SENT' | 'FAILED' | 'PENDING';
+}

@@ -322,17 +322,24 @@ model ApplicationEvent {
 }
 
 model EmailAccount {
-  id           String   @id @default(uuid())
-  userId       String
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  provider     String
-  emailAddress String
-  accessToken  String?
-  refreshToken String?
-  smtpHost     String?
-  smtpPort     Int?
-  isDefault    Boolean  @default(false)
-  createdAt    DateTime @default(now())
+  id                    String   @id @default(uuid())
+  userId                String
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider              String
+  emailAddress          String
+  accessToken           String?
+  refreshToken          String?
+  encryptedAccessToken  String?
+  encryptedRefreshToken String?
+  expiresAt             DateTime?
+  smtpHost              String?
+  smtpPort              Int?
+  isDefault             Boolean  @default(false)
+  isConnected           Boolean  @default(true)
+  lastTestedAt          DateTime?
+  dailySentCount        Int      @default(0)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
   messages     EmailMessage[]
 }
