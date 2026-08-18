@@ -6,7 +6,7 @@
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "test": "jest --passWithNoTests --forceExit"
+    "test": "jest --passWithNoTests --forceExit --runInBand"
   },
   "dependencies": {
     "@jobhunter/database": "1.0.0",
