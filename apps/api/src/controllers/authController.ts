@@ -40,7 +40,7 @@ export const register = async (req: Request, res: Response) => {
       targetRoles: ['Full Stack Developer', 'Backend Developer'],
       certifications: [],
       skills: [
-        { name: 'JavaScript', yearsExperience: 2, proficiencyLevel: 'ADVANCED' },
+        { name: 'JavaScript', yearsExperience: 2, proficiencyLevel: 'STRONG' },
         { name: 'Node.js', yearsExperience: 1, proficiencyLevel: 'INTERMEDIATE' }
       ]
     });

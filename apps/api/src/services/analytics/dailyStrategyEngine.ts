@@ -1,5 +1,4 @@
 import { followUpEngineService } from '../outreach/followUpEngine';
-import { queuedEmailsMap } from '../../controllers/outreachController';
 import { memoryStore } from '../store';
 import { 
   ApplicationStatus, 
@@ -74,11 +73,73 @@ export class DailyStrategyEngine {
   }
 
   /**
+   * Dimension 1: Calculate Match Score (0-100) or Neutral fallback (50)
+   */
+  public calculateMatchScore(item: any): number {
+    if (typeof item?.overallScore === 'number' && item.overallScore > 0) return item.overallScore;
+    if (typeof item?.qualityScore === 'number' && item.qualityScore > 0) return item.qualityScore;
+    if (typeof item?.matchScore === 'number' && item.matchScore > 0) return item.matchScore;
+    return 50; // Documented neutral fallback when no match score exists
+  }
+
+  /**
+   * Dimension 2: Calculate Freshness Score (0-100) from postedAt
+   */
+  public calculateFreshnessScore(postedAtDate?: string | Date): number {
+    if (!postedAtDate) return 0; // Neutral 0 for non-job tasks
+    const date = new Date(postedAtDate);
+    const diffMs = Date.now() - date.getTime();
+    if (isNaN(diffMs) || diffMs < 0) return 50;
+
+    const diffHours = diffMs / (1000 * 60 * 60);
+    if (diffHours < 24) return 100;
+    if (diffHours < 72) return 80;
+    if (diffHours < 168) return 50;
+    return 30;
+  }
+
+  /**
+   * Dimension 3: Calculate Recruiter Availability Score (0-100)
+   */
+  public calculateRecruiterScore(recruiter?: any): number {
+    if (!recruiter) return 0;
+    if (recruiter.verificationStatus === 'VERIFIED' || recruiter.isVerified === true) return 100;
+    if (recruiter.sourceUrl || recruiter.linkedinUrl) return 70; // Public contact
+    return 40; // Unverified contact
+  }
+
+  /**
+   * Dimension 4: Calculate Urgency Score (0-100)
+   */
+  public calculateUrgencyScore(type: string, item: any): number {
+    if (type === 'PREPARE_INTERVIEW' || type === 'CONFIRM_INTERVIEW') return 95;
+    if (type === 'FOLLOW_UP') {
+      const days = item?.scheduledForDays || 2;
+      if (days >= 10) return 100;
+      if (days >= 5) return 95;
+      return 90;
+    }
+    if (type === 'REVIEW_RECRUITER_REPLY') return 85;
+    if (type === 'CONTACT_RECRUITER') return 75;
+    if (type === 'APPLY_JOB') {
+      const postedAt = item?.postedAt || item?.createdAt;
+      const freshness = this.calculateFreshnessScore(postedAt);
+      return Math.min(100, 50 + Math.round(freshness * 0.4));
+    }
+    return 50; // Neutral urgency fallback
+  }
+
+  /**
+   * Transparent Formula: 40% Match + 30% Urgency + 20% Freshness + 10% Recruiter
+   */
+  public computePriorityScore(matchScore: number, urgencyScore: number, freshnessScore: number, recruiterScore: number): number {
+    return Math.round(0.4 * matchScore + 0.3 * urgencyScore + 0.2 * freshnessScore + 0.1 * recruiterScore);
+  }
+
+  /**
    * Compute Morning Dashboard Overview & Daily Priority Actions from PostgreSQL Records
    */
   public async getMorningDashboard(userId: string): Promise<Step10MorningDashboardDTO> {
-    const todayStr = new Date().toISOString().split('T')[0];
-
     // 1. Load PostgreSQL Applications & Job Matches
     const dbApps = await applicationRepository.findByUserId(userId);
     const userApps = dbApps || [];
@@ -123,17 +184,17 @@ export class DailyStrategyEngine {
 
     // Action 1: PREPARE_INTERVIEW
     upcomingInterviews.forEach((a, i) => {
-      const matchScore = (a as any).qualityScore || 90;
-      const urgencyScore = 95;
-      const freshnessScore = 80;
-      const recruiterScore = 80;
-      const priorityScore = Math.round(0.4 * matchScore + 0.3 * urgencyScore + 0.2 * freshnessScore + 0.1 * recruiterScore - i);
+      const matchScore = this.calculateMatchScore(a);
+      const urgencyScore = this.calculateUrgencyScore('PREPARE_INTERVIEW', a);
+      const freshnessScore = 0; // Not applicable for interview tasks
+      const recruiterScore = this.calculateRecruiterScore(a.job?.recruiters?.[0]?.recruiter);
+      const priorityScore = this.computePriorityScore(matchScore, urgencyScore, freshnessScore, recruiterScore) - i;
 
       priorityActions.push({
         id: `act-int-prep-${a.id}`,
         type: 'PREPARE_INTERVIEW',
         title: `Prepare for ${(a as any).jobTitle || a.job?.title || 'Technical'} Interview`,
-        companyName: (a as any).companyName || a.job?.companyName || 'Target Company',
+        companyName: (a as any).companyName || a.job?.company?.name || 'Target Company',
         jobTitle: (a as any).jobTitle || a.job?.title || 'Engineer',
         priorityScore,
         urgency: 'HIGH',
@@ -146,15 +207,16 @@ export class DailyStrategyEngine {
     // Action 2: CONFIRM_INTERVIEW / REVIEW_RECRUITER_REPLY
     pendingProposals.forEach((p, i) => {
       const isInterview = p.emailCategory === 'INTERVIEW_INVITATION';
-      const matchScore = 90;
-      const urgencyScore = 95;
-      const freshnessScore = 90;
-      const recruiterScore = 80;
-      const priorityScore = Math.round(0.4 * matchScore + 0.3 * urgencyScore + 0.2 * freshnessScore + 0.1 * recruiterScore - i);
+      const actionType = isInterview ? 'CONFIRM_INTERVIEW' : 'REVIEW_RECRUITER_REPLY';
+      const matchScore = 50; // Neutral fallback when missing
+      const urgencyScore = this.calculateUrgencyScore(actionType, p);
+      const freshnessScore = 0;
+      const recruiterScore = 70;
+      const priorityScore = this.computePriorityScore(matchScore, urgencyScore, freshnessScore, recruiterScore) - i;
 
       priorityActions.push({
         id: `act-prop-${p.id}`,
-        type: isInterview ? 'CONFIRM_INTERVIEW' : 'REVIEW_RECRUITER_REPLY',
+        type: actionType,
         title: isInterview ? `Confirm Interview with ${p.companyName}` : `Review Recruiter Response from ${p.companyName}`,
         companyName: p.companyName,
         jobTitle: p.jobTitle,
@@ -168,11 +230,11 @@ export class DailyStrategyEngine {
 
     // Action 3: FOLLOW_UP
     followupsDue.forEach((f, i) => {
-      const matchScore = 85;
-      const urgencyScore = 90;
-      const freshnessScore = 70;
-      const recruiterScore = f.recruiterName ? 100 : 50;
-      const priorityScore = Math.round(0.4 * matchScore + 0.3 * urgencyScore + 0.2 * freshnessScore + 0.1 * recruiterScore - i);
+      const matchScore = 50;
+      const urgencyScore = this.calculateUrgencyScore('FOLLOW_UP', f);
+      const freshnessScore = 0;
+      const recruiterScore = f.recruiterName ? 70 : 0;
+      const priorityScore = this.computePriorityScore(matchScore, urgencyScore, freshnessScore, recruiterScore) - i;
 
       priorityActions.push({
         id: `act-fol-due-${f.id}`,
@@ -190,20 +252,22 @@ export class DailyStrategyEngine {
     // Action 4: APPLY_JOB (High-Match Jobs from PostgreSQL)
     highMatchMatches.slice(0, 5).forEach((m: any, i: number) => {
       const job = m.job || {};
-      const score = m.overallScore;
+      const score = m.overallScore; // REAL score!
+      const rec = job.recruiters?.[0]?.recruiter;
       const freshnessLabel = this.formatJobFreshness(job.postedAt || m.createdAt);
-      const isRecVerified = this.isRecruiterVerified(job.recruiters?.[0]?.recruiter);
+      const isRecVerified = this.isRecruiterVerified(rec);
       
-      const urgencyScore = 80;
-      const freshnessScore = job.postedAt && (Date.now() - new Date(job.postedAt).getTime() < 86400000) ? 100 : 70;
-      const recruiterScore = isRecVerified ? 100 : (job.recruiters?.length ? 50 : 0);
-      const priorityScore = Math.round(0.4 * score + 0.3 * urgencyScore + 0.2 * freshnessScore + 0.1 * recruiterScore - i);
+      const matchScore = score;
+      const urgencyScore = this.calculateUrgencyScore('APPLY_JOB', job);
+      const freshnessScore = this.calculateFreshnessScore(job.postedAt || m.createdAt);
+      const recruiterScore = this.calculateRecruiterScore(rec);
+      const priorityScore = this.computePriorityScore(matchScore, urgencyScore, freshnessScore, recruiterScore) - i;
 
       priorityActions.push({
         id: `act-apply-job-${m.jobId || m.id}`,
         type: 'APPLY_JOB',
-        title: `Apply for ${job.title || 'Target Role'} at ${job.companyName || job.company?.name || 'Company'}`,
-        companyName: job.companyName || job.company?.name || 'Company',
+        title: `Apply for ${job.title || 'Target Role'} at ${job.company?.name || job.companyName || 'Company'}`,
+        companyName: job.company?.name || job.companyName || 'Company',
         jobTitle: job.title || 'Target Role',
         matchScore: score,
         priorityScore,
@@ -227,7 +291,7 @@ export class DailyStrategyEngine {
       return {
         id: m.jobId || m.id,
         title: job.title || 'Backend Engineer',
-        companyName: job.companyName || job.company?.name || 'Target Company',
+        companyName: job.company?.name || job.companyName || 'Target Company',
         matchScore: m.overallScore, // REAL persisted score! No || 92 fallback!
         postedAgo: this.formatJobFreshness(job.postedAt || m.createdAt), // REAL freshness string!
         recruiterVerified: isVerified, // REAL computed verification flag!
@@ -277,7 +341,7 @@ export class DailyStrategyEngine {
   }
 
   /**
-   * Performance breakdown by Normalized Job Role with Zero-Fabrication Protection
+   * Performance breakdown by Normalized Job Role from PostgreSQL Relations
    */
   public async getRolePerformance(userId: string): Promise<GroupPerformanceStats[]> {
     const dbApps = await applicationRepository.findByUserId(userId);
@@ -335,7 +399,7 @@ export class DailyStrategyEngine {
   }
 
   /**
-   * Performance breakdown by Actual Job Source
+   * Performance breakdown by Actual Job Source from PostgreSQL Relations
    */
   public async getSourcePerformance(userId: string): Promise<GroupPerformanceStats[]> {
     const dbApps = await applicationRepository.findByUserId(userId);
@@ -344,7 +408,7 @@ export class DailyStrategyEngine {
 
     userApps.forEach(app => {
       const storeJob = memoryStore.jobs.get(app.jobId);
-      const source = app.job?.source || storeJob?.source || 'User Import';
+      const source = app.job?.source?.name || (app.job as any)?.sourceName || (app.job as any)?.source || storeJob?.source || 'User Import';
 
       const stats = map.get(source) || { applications: 0, responses: 0, interviews: 0 };
       stats.applications += 1;
@@ -383,7 +447,7 @@ export class DailyStrategyEngine {
   }
 
   /**
-   * Performance breakdown by Resume Version Used
+   * Performance breakdown by Resume Version Used from PostgreSQL Relations
    */
   public async getResumePerformance(userId: string): Promise<GroupPerformanceStats[]> {
     const dbApps = await applicationRepository.findByUserId(userId);
@@ -392,7 +456,7 @@ export class DailyStrategyEngine {
 
     userApps.forEach(app => {
       const match = memoryStore.matches.get(`${userId}_${app.jobId}`);
-      const resumeTitle = match?.recommendedResumeTitle || (app as any).resumeTitle || 'Default Resume';
+      const resumeTitle = (app as any).resumeTitle || (app.job as any)?.recommendedResumeTitle || match?.recommendedResumeTitle || 'Default Resume';
 
       const stats = map.get(resumeTitle) || { applications: 0, responses: 0, interviews: 0 };
       stats.applications += 1;

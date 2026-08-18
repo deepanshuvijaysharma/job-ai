@@ -402,9 +402,31 @@ export class ApplicationRepository {
     try {
       const dbApps = await executeWithFastTimeout(() => prisma.application.findMany({
         where: { userId },
-        include: { job: { include: { company: true } }, events: true }
+        include: { 
+          job: { 
+            include: { 
+              company: true, 
+              source: true, 
+              recruiters: { include: { recruiter: true } } 
+            } 
+          }, 
+          events: true 
+        }
       }));
-      if (dbApps.length > 0) return dbApps;
+      if (dbApps && dbApps.length > 0) {
+        const storeApps = Array.from(memoryStore.applications.values()).filter(a => a.userId === userId);
+        const existingIds = new Set(dbApps.map(a => a.id));
+        for (const sa of storeApps) {
+          if (!existingIds.has(sa.id)) {
+            const storeJob = memoryStore.jobs.get(sa.jobId);
+            dbApps.push({
+              ...sa,
+              job: storeJob ? { title: storeJob.title, company: { name: storeJob.companyName }, source: { name: storeJob.source } } : null
+            } as any);
+          }
+        }
+        return dbApps;
+      }
     } catch {}
 
     const storeApps = Array.from(memoryStore.applications.values()).filter(a => a.userId === userId);

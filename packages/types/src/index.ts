@@ -37,7 +37,7 @@ export enum EmailClassification {
   OTHER = 'OTHER'
 }
 
-export type SkillProficiencyLevel = 'STRONG' | 'INTERMEDIATE' | 'BASIC' | 'LEARNING';
+export type SkillProficiencyLevel = 'STRONG' | 'INTERMEDIATE' | 'BASIC' | 'LEARNING' | 'ADVANCED' | 'EXPERT';
 
 export interface UserDTO {
   id: string;

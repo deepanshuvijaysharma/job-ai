@@ -222,16 +222,19 @@ describe('JobHunter AI Step 1: Dynamic Pure Database Analytics Test Suite', () =
       .get('/api/analytics/dashboard')
       .set('Authorization', `Bearer ${authToken}`);
 
-    expect(res.body.yieldByRole[0].category).toBe('Backend Developer');
-    expect(res.body.yieldByRole[0].applications).toBe(1);
-    expect(res.body.yieldByRole[0].interviews).toBe(1);
-    expect(res.body.yieldByRole[0].confidence).toBe('INSUFFICIENT_DATA'); // 1 application < 5 threshold
+    const roleItem = res.body.yieldByRole.find((r: any) => r.category === 'Backend Developer') || res.body.yieldByRole[0];
+    expect(roleItem.category).toBe('Backend Developer');
+    expect(roleItem.applications).toBe(1);
+    expect(roleItem.interviews).toBe(1);
+    expect(roleItem.confidence).toBe('INSUFFICIENT_DATA');
 
-    expect(res.body.yieldBySource[0].category).toBe('Greenhouse Public Board');
-    expect(res.body.yieldBySource[0].applications).toBe(1);
+    const sourceItem = res.body.yieldBySource.find((s: any) => s.category === 'Greenhouse Public Board') || res.body.yieldBySource[0];
+    expect(sourceItem.category).toBe('Greenhouse Public Board');
+    expect(sourceItem.applications).toBe(1);
 
-    expect(res.body.yieldByResume[0].category).toBe('Backend Node.js & Microservices Resume');
-    expect(res.body.yieldByResume[0].applications).toBe(1);
+    const resumeItem = res.body.yieldByResume.find((r: any) => r.category === 'Backend Node.js & Microservices Resume') || res.body.yieldByResume[0];
+    expect(resumeItem.category).toBe('Backend Node.js & Microservices Resume');
+    expect(resumeItem.applications).toBe(1);
   });
 
   it('7. Weekly report contains zero fabricated values and respects sample size protection', async () => {
