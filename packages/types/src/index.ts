@@ -397,3 +397,76 @@ export interface ProposedPipelineUpdateDTO {
   createdAt: string;
   updatedAt?: string;
 }
+
+export type PriorityActionType =
+  | 'APPLY_JOB'
+  | 'CONTACT_RECRUITER'
+  | 'FOLLOW_UP'
+  | 'REVIEW_RECRUITER_REPLY'
+  | 'CONFIRM_INTERVIEW'
+  | 'PREPARE_INTERVIEW'
+  | 'REVIEW_APPLICATION'
+  | 'COMPLETE_ASSESSMENT';
+
+export interface PriorityActionItemDTO {
+  id: string;
+  type: PriorityActionType;
+  title: string;
+  companyName: string;
+  jobTitle?: string;
+  priorityScore: number;
+  reason: string;
+  urgency: 'HIGH' | 'MEDIUM' | 'LOW';
+  matchScore?: number;
+  freshness?: string;
+  requiredUserAction: string;
+  targetId: string;
+}
+
+export interface TopJobItemDTO {
+  id: string;
+  title: string;
+  companyName: string;
+  matchScore: number;
+  postedAgo: string;
+  recruiterVerified: boolean;
+  urgency: string;
+  location?: string;
+}
+
+export interface FollowUpActionItemDTO {
+  id: string;
+  applicationId: string;
+  companyName: string;
+  recruiterName?: string;
+  scheduledForDays: number;
+  dueDate: string;
+  urgency: string;
+  status: string;
+}
+
+export interface DailyQuotaDTO {
+  applicationsToday: number;
+  applicationsLimit: number;
+  recruiterEmailsToday: number;
+  recruiterEmailsLimit: number;
+  followupsToday: number;
+  followupsLimit: number;
+}
+
+export interface Step10MorningDashboardDTO {
+  greeting: string;
+  todayDate: string;
+  limits: DailyQuotaDTO;
+  metrics: {
+    highMatchJobsCount: number;
+    recruitersToContactCount: number;
+    followupsDueCount: number;
+    newCompanyOpeningsCount: number;
+    upcomingInterviewsCount: number;
+    verifiedRecruitersCount: number;
+  };
+  priorityActions: PriorityActionItemDTO[];
+  topJobsToday: TopJobItemDTO[];
+  followupsDueToday: FollowUpActionItemDTO[];
+}

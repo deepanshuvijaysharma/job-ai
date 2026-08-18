@@ -4,7 +4,8 @@ import {
   getDailySummary, 
   getMorningDashboard, 
   getStrategyInsights, 
-  getWeeklyReport 
+  getWeeklyReport, 
+  updateDailyQuotas 
 } from '../controllers/analyticsController';
 import { authenticateJWT } from '../middleware/authMiddleware';
 
@@ -15,5 +16,6 @@ router.get('/dashboard', authenticateJWT, getAnalyticsDashboard);
 router.get('/morning', authenticateJWT, getMorningDashboard);
 router.get('/strategy', authenticateJWT, getStrategyInsights);
 router.get('/weekly', authenticateJWT, getWeeklyReport);
+router.post('/quotas', authenticateJWT, updateDailyQuotas);
 
 export default router;

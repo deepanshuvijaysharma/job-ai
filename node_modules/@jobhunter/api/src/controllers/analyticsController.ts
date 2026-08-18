@@ -2,9 +2,9 @@ import { Response } from 'express';
 import { AuthenticatedRequest } from '../middleware/authMiddleware';
 import { memoryStore } from '../services/store';
 import { ApplicationStatus } from '@jobhunter/types';
-import { companyWatchService } from '../services/company/companyWatchService';
 import { dailyStrategyEngine } from '../services/analytics/dailyStrategyEngine';
 import { queuedEmailsMap } from './outreachController';
+import { candidateProfileRepository } from '../repositories/prismaRepository';
 
 export const getDailySummary = async (req: AuthenticatedRequest, res: Response) => {
   const userId = req.user?.id || 'demo-user-123';
@@ -16,7 +16,7 @@ export const getDailySummary = async (req: AuthenticatedRequest, res: Response) 
     recruitersFoundCount: dashboard.metrics.recruitersToContactCount,
     followUpsDueCount: dashboard.metrics.followupsDueCount,
     watchedCompanyOpeningsCount: dashboard.metrics.newCompanyOpeningsCount,
-    topJobsToday: Array.from(memoryStore.jobs.values()).slice(0, 10),
+    topJobsToday: dashboard.topJobsToday,
     recommendedActions: dashboard.priorityActions,
     limits: dashboard.limits
   });
@@ -25,7 +25,7 @@ export const getDailySummary = async (req: AuthenticatedRequest, res: Response) 
 export const getAnalyticsDashboard = async (req: AuthenticatedRequest, res: Response) => {
   const userId = req.user?.id || 'demo-user-123';
 
-  // 1. Jobs Discovered & Priority Breakdown from database
+  // 1. Jobs Discovered & Priority Breakdown
   const allJobs = Array.from(memoryStore.jobs.values());
   const jobsDiscovered = allJobs.length;
 
@@ -60,7 +60,7 @@ export const getAnalyticsDashboard = async (req: AuthenticatedRequest, res: Resp
   const offersCount = userApps.filter(a => a.status === ApplicationStatus.OFFER).length;
   const rejectionsCount = userApps.filter(a => a.status === ApplicationStatus.REJECTED).length;
 
-  // 4. Exact Data-Driven Formulas (0 denominator safeguard)
+  // 4. Exact Data-Driven Formulas
   const appToResponseRate = applicationsCount > 0 
     ? Number(((recruiterConversationsCount / applicationsCount) * 100).toFixed(1)) 
     : 0;
@@ -82,9 +82,9 @@ export const getAnalyticsDashboard = async (req: AuthenticatedRequest, res: Resp
     : 0;
 
   // 5. Dynamic Breakdown Calculations with Sample-Size Protection
-  const yieldByRole = dailyStrategyEngine.getRolePerformance(userId);
-  const yieldBySource = dailyStrategyEngine.getSourcePerformance(userId);
-  const yieldByResume = dailyStrategyEngine.getResumePerformance(userId);
+  const yieldByRole = await dailyStrategyEngine.getRolePerformance(userId);
+  const yieldBySource = await dailyStrategyEngine.getSourcePerformance(userId);
+  const yieldByResume = await dailyStrategyEngine.getResumePerformance(userId);
 
   return res.json({
     funnel: {
@@ -119,12 +119,36 @@ export const getMorningDashboard = async (req: AuthenticatedRequest, res: Respon
 
 export const getStrategyInsights = async (req: AuthenticatedRequest, res: Response) => {
   const userId = req.user?.id || 'demo-user-123';
-  const insights = dailyStrategyEngine.generateStrategyInsights(userId);
+  const insights = await dailyStrategyEngine.generateStrategyInsights(userId);
   return res.json(insights);
 };
 
 export const getWeeklyReport = async (req: AuthenticatedRequest, res: Response) => {
   const userId = req.user?.id || 'demo-user-123';
-  const report = dailyStrategyEngine.getWeeklyReport(userId);
+  const report = await dailyStrategyEngine.getWeeklyReport(userId);
   return res.json(report);
+};
+
+export const updateDailyQuotas = async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.user?.id || 'demo-user-123';
+  const { dailyAppTarget, dailyOutreachTarget, dailyFollowUpTarget } = req.body;
+
+  try {
+    const updated = await candidateProfileRepository.upsert(userId, {
+      dailyAppTarget: Number(dailyAppTarget) || 15,
+      dailyOutreachTarget: Number(dailyOutreachTarget) || 10,
+      dailyFollowUpTarget: Number(dailyFollowUpTarget) || 5
+    } as any);
+
+    return res.json({
+      message: 'Daily quotas updated successfully in PostgreSQL profile',
+      quotas: {
+        dailyAppTarget: (updated as any).dailyAppTarget || 15,
+        dailyOutreachTarget: (updated as any).dailyOutreachTarget || 10,
+        dailyFollowUpTarget: (updated as any).dailyFollowUpTarget || 5
+      }
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Failed to update daily quotas' });
+  }
 };

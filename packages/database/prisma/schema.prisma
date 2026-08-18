@@ -106,6 +106,9 @@ model CandidateProfile {
   projects           Json?
   workExperience     Json?
   aiProfileAnalysis  Json?
+  dailyAppTarget     Int?             @default(15)
+  dailyOutreachTarget Int?            @default(10)
+  dailyFollowUpTarget Int?            @default(5)
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
 }

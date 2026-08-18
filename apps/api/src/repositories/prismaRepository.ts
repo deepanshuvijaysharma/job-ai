@@ -976,6 +976,7 @@ export class InboxRepository {
 // Export singleton repository instances
 export const userRepository = new UserRepository();
 export const profileRepository = new ProfileRepository();
+export const candidateProfileRepository = profileRepository;
 export const resumeRepository = new ResumeRepository();
 export const jobRepository = new JobRepository();
 export const jobMatchRepository = new JobMatchRepository();
