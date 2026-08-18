@@ -222,3 +222,8 @@ export const getJobAlerts = async (req: AuthenticatedRequest, res: Response) => 
   const userNotifs = jobDiscoveryManager.notifications.filter(n => n.userId === userId);
   return res.json(userNotifs);
 };
+
+export const getSourceHealth = async (req: AuthenticatedRequest, res: Response) => {
+  const health = jobDiscoveryManager.getSourceHealth();
+  return res.json({ sources: health });
+};

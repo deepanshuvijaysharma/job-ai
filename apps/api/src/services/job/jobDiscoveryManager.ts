@@ -6,6 +6,7 @@ import { deduplicationService } from './jobIngestionService';
 import { advancedMatchingEngine } from './advancedMatchingEngine';
 import { memoryStore } from '../store';
 import { JobDTO, RemotePreference } from '@jobhunter/types';
+import { jobRepository } from '../../repositories/prismaRepository';
 
 export interface JobNotification {
   id: string;
@@ -18,12 +19,31 @@ export interface JobNotification {
   createdAt: string;
 }
 
+export interface SourceHealthStatus {
+  id: string;
+  name: string;
+  type: string;
+  enabled: boolean;
+  priority: number;
+  status: 'Healthy' | 'Degraded' | 'Disabled';
+  lastAttempt?: string;
+  lastSuccess?: string;
+  lastError?: string;
+  lastErrorMessage?: string;
+  consecutiveFailures: number;
+  jobsDiscoveredCount: number;
+}
+
 export class JobDiscoveryManager {
   private adapters: JobSourceAdapter[] = [];
   public notifications: JobNotification[] = [];
+  private healthStats = new Map<string, SourceHealthStatus>();
 
   constructor() {
-    // Register adapters in strict priority order
+    // Register adapters in strict priority order per Section 3:
+    // Priority 1: Company Career Page
+    // Priority 2: Greenhouse Public Board
+    // Priority 3: Lever Public Board
     this.registerAdapter(companyCareerAdapter);
     this.registerAdapter(greenhouseAdapter);
     this.registerAdapter(leverAdapter);
@@ -31,8 +51,22 @@ export class JobDiscoveryManager {
 
   public registerAdapter(adapter: JobSourceAdapter) {
     this.adapters.push(adapter);
-    // Sort by priority ascending (Priority 1 first)
     this.adapters.sort((a, b) => a.priority - b.priority);
+
+    this.healthStats.set(adapter.id, {
+      id: adapter.id,
+      name: adapter.name,
+      type: adapter.type,
+      enabled: adapter.enabled,
+      priority: adapter.priority,
+      status: adapter.enabled ? 'Healthy' : 'Disabled',
+      consecutiveFailures: 0,
+      jobsDiscoveredCount: 0
+    });
+  }
+
+  public getSourceHealth(): SourceHealthStatus[] {
+    return Array.from(this.healthStats.values());
   }
 
   /**
@@ -47,6 +81,7 @@ export class JobDiscoveryManager {
     discoveredCount: number;
     newJobs: JobDTO[];
     notifications: JobNotification[];
+    sourceHealth: SourceHealthStatus[];
   }> {
     const profile = memoryStore.profiles.get(userId);
     const candidateData = profile ? {
@@ -74,15 +109,26 @@ export class JobDiscoveryManager {
 
     // Query adapters in priority order
     for (const adapter of this.adapters) {
+      if (!adapter.enabled) continue;
+
+      const health = this.healthStats.get(adapter.id)!;
+      health.lastAttempt = new Date().toISOString();
+
       try {
         const rawJobs = await adapter.search(query);
+        health.lastSuccess = new Date().toISOString();
+        health.consecutiveFailures = 0;
+        health.status = 'Healthy';
+
         for (const raw of rawJobs) {
-          // Deduplication Check
-          if (deduplicationService.isDuplicate(raw as any)) {
+          const statusCheck = deduplicationService.checkJobStatus(raw as any);
+          
+          if (statusCheck.isDuplicate && !statusCheck.isUpdated) {
+            // Already seen and unchanged
             continue;
           }
 
-          const jobId = `job-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+          const jobId = statusCheck.existingId || `job-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
           // Advanced Job Match Calculation
           const matchResult = advancedMatchingEngine.calculateMatch(candidateData, {
@@ -126,7 +172,7 @@ export class JobDiscoveryManager {
             }] : undefined
           };
 
-          // Save Job & Match in memoryStore
+          // Save Job & Match in memoryStore & PostgreSQL
           memoryStore.jobs.set(jobId, jobDto);
           memoryStore.matches.set(`${userId}_${jobId}`, {
             overallScore: matchResult.overallScore,
@@ -145,6 +191,10 @@ export class JobDiscoveryManager {
             whatHoldsBack: matchResult.whatHoldsBack
           });
 
+          // Async persist to PostgreSQL if DB available
+          jobRepository.upsertJob(jobDto).catch(() => {/* Ignore DB offline */});
+
+          health.jobsDiscoveredCount += 1;
           newJobs.push({
             ...jobDto,
             matchScore: memoryStore.matches.get(`${userId}_${jobId}`)
@@ -167,6 +217,12 @@ export class JobDiscoveryManager {
           }
         }
       } catch (err) {
+        health.lastError = new Date().toISOString();
+        health.lastErrorMessage = (err as Error).message;
+        health.consecutiveFailures += 1;
+        if (health.consecutiveFailures >= 3) {
+          health.status = 'Degraded';
+        }
         console.warn(`Error running job discovery adapter ${adapter.name}:`, err);
       }
     }
@@ -174,7 +230,8 @@ export class JobDiscoveryManager {
     return {
       discoveredCount: newJobs.length,
       newJobs,
-      notifications: newNotifications
+      notifications: newNotifications,
+      sourceHealth: this.getSourceHealth()
     };
   }
 }

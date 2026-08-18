@@ -147,11 +147,17 @@ model Resume {
 }
 
 model JobSource {
-  id          String   @id @default(uuid())
-  name        String   @unique
-  enabled     Boolean  @default(true)
-  config      Json?
-  jobs        Job[]
+  id                  String    @id @default(uuid())
+  name                String    @unique
+  type                String    @default("PUBLIC_FEED")
+  enabled             Boolean   @default(true)
+  config              Json?
+  lastAttempt         DateTime?
+  lastSuccess         DateTime?
+  lastError           DateTime?
+  lastErrorMessage    String?
+  consecutiveFailures Int       @default(0)
+  jobs                Job[]
 }
 
 model Company {
@@ -437,4 +443,23 @@ model ActivityLog {
   createdAt DateTime @default(now())
 
   @@index([userId, createdAt])
+}
+
+model CompanyWatchlist {
+  id                    String    @id @default(uuid())
+  company               String
+  careerUrl             String?
+  atsType               String    @default("CAREER_PAGE") // CAREER_PAGE | GREENHOUSE | LEVER | PUBLIC_FEED
+  boardToken            String?   // Greenhouse board token or Lever company identifier
+  enabled               Boolean   @default(true)
+  lastCheckedAt         DateTime?
+  lastSuccessfulCheckAt DateTime?
+  lastErrorAt           DateTime?
+  lastErrorMessage      String?
+  consecutiveFailures   Int       @default(0)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([atsType])
+  @@index([enabled])
 }

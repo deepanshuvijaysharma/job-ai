@@ -37,12 +37,16 @@ export interface JobSearchQuery {
   locations?: string[];
   remoteOnly?: boolean;
   limit?: number;
+  boardToken?: string;
+  companyName?: string;
 }
 
 export interface JobSourceAdapter {
-  sourceId: string;
+  id: string;
   name: string;
+  type: 'CAREER_PAGE' | 'GREENHOUSE' | 'LEVER' | 'PUBLIC_FEED' | 'USER_IMPORT' | 'EMAIL_ALERT';
+  enabled: boolean;
   priority: number;
   search(query: JobSearchQuery): Promise<RawJobData[]>;
-  getJob(url: string): Promise<RawJobData | null>;
+  fetchJob(input: { url: string }): Promise<RawJobData | null>;
 }

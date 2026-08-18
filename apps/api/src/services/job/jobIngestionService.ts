@@ -6,6 +6,8 @@ export interface RawJobData {
   companyName: string;
   companyWebsite?: string;
   source: string;
+  sourceId?: string;
+  externalId?: string;
   canonicalUrl: string;
   applicationUrl: string;
   location: string;
@@ -18,7 +20,7 @@ export interface RawJobData {
   requiredSkills: string[];
   preferredSkills: string[];
   employmentType?: string;
-  postedAt?: Date;
+  postedAt?: Date | string;
   recruiterInfo?: {
     name: string;
     role: string;
@@ -44,8 +46,9 @@ export interface JobMatchCalculation {
 }
 
 export class JobDeduplicationService {
-  private seenCanonicalUrls = new Set<string>();
-  private seenSignatures = new Set<string>();
+  private seenCanonicalUrls = new Map<string, { id: string; hash: string; lastSeenAt: Date }>();
+  private seenSourceJobIds = new Map<string, { id: string; hash: string; lastSeenAt: Date }>();
+  private seenSignatures = new Map<string, { id: string; hash: string; lastSeenAt: Date }>();
 
   generateSignature(companyName: string, title: string, location: string): string {
     const cleanComp = companyName.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -54,19 +57,38 @@ export class JobDeduplicationService {
     return `${cleanComp}_${cleanTitle}_${cleanLoc}`;
   }
 
-  isDuplicate(job: RawJobData): boolean {
-    if (this.seenCanonicalUrls.has(job.canonicalUrl)) {
-      return true;
-    }
+  generateContentHash(job: RawJobData): string {
+    return `${job.title}_${job.location}_${job.description.slice(0, 100)}_${(job.requiredSkills || []).join(',')}`;
+  }
 
+  checkJobStatus(job: RawJobData): { isDuplicate: boolean; isUpdated: boolean; existingId?: string } {
+    const hash = this.generateContentHash(job);
+    const sourceKey = job.sourceId && job.externalId ? `${job.sourceId}_${job.externalId}` : null;
     const sig = this.generateSignature(job.companyName, job.title, job.location);
-    if (this.seenSignatures.has(sig)) {
-      return true;
+
+    const match = this.seenCanonicalUrls.get(job.canonicalUrl) ||
+                  (sourceKey ? this.seenSourceJobIds.get(sourceKey) : undefined) ||
+                  this.seenSignatures.get(sig);
+
+    if (match) {
+      const isUpdated = match.hash !== hash;
+      match.lastSeenAt = new Date();
+      match.hash = hash;
+      return { isDuplicate: true, isUpdated, existingId: match.id };
     }
 
-    this.seenCanonicalUrls.add(job.canonicalUrl);
-    this.seenSignatures.add(sig);
-    return false;
+    const newId = `job-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const record = { id: newId, hash, lastSeenAt: new Date() };
+
+    this.seenCanonicalUrls.set(job.canonicalUrl, record);
+    if (sourceKey) this.seenSourceJobIds.set(sourceKey, record);
+    this.seenSignatures.set(sig, record);
+
+    return { isDuplicate: false, isUpdated: false, existingId: newId };
+  }
+
+  isDuplicate(job: RawJobData): boolean {
+    return this.checkJobStatus(job).isDuplicate;
   }
 }
 
