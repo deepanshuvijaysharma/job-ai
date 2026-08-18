@@ -739,6 +739,160 @@ export class EmailRepository {
   }
 }
 
+// ==========================================
+// 10. Inbox Repository
+// ==========================================
+export class InboxRepository {
+  async upsertInboxMessage(data: {
+    id: string;
+    accountId: string;
+    externalMessageId: string;
+    threadId?: string;
+    senderEmail: string;
+    senderName?: string;
+    subject: string;
+    body: string;
+  }) {
+    try {
+      return await executeWithFastTimeout(() => prisma.emailMessage.upsert({
+        where: { id: data.id },
+        create: {
+          id: data.id,
+          accountId: data.accountId,
+          externalMessageId: data.externalMessageId,
+          threadId: data.threadId,
+          direction: 'INBOUND',
+          senderEmail: data.senderEmail,
+          senderName: data.senderName,
+          subject: data.subject,
+          body: data.body,
+          isApproved: true,
+          status: 'RECEIVED'
+        },
+        update: {
+          subject: data.subject,
+          body: data.body
+        }
+      }));
+    } catch {
+      return null;
+    }
+  }
+
+  async createProposal(proposal: any) {
+    try {
+      return await executeWithFastTimeout(() => prisma.proposedPipelineUpdate.upsert({
+        where: { id: proposal.id },
+        create: {
+          id: proposal.id,
+          userId: proposal.userId,
+          matchedApplicationId: proposal.matchedApplicationId,
+          emailMessageId: proposal.emailMessageId,
+          companyName: proposal.companyName,
+          jobTitle: proposal.jobTitle,
+          emailCategory: proposal.emailCategory,
+          proposedStatus: proposal.proposedStatus,
+          extractedDetails: proposal.extractedDetails as any,
+          isConfirmed: proposal.isConfirmed
+        },
+        update: {
+          isConfirmed: proposal.isConfirmed
+        }
+      }));
+    } catch {
+      return null;
+    }
+  }
+
+  async findProposalById(id: string): Promise<any | null> {
+    try {
+      const p = await executeWithFastTimeout(() => prisma.proposedPipelineUpdate.findUnique({ where: { id } }));
+      if (!p) return null;
+      return {
+        id: p.id,
+        userId: p.userId,
+        matchedApplicationId: p.matchedApplicationId || undefined,
+        emailMessageId: p.emailMessageId || undefined,
+        companyName: p.companyName,
+        jobTitle: p.jobTitle,
+        emailCategory: p.emailCategory as any,
+        proposedStatus: p.proposedStatus,
+        extractedDetails: p.extractedDetails as any,
+        isConfirmed: p.isConfirmed,
+        createdAt: p.createdAt.toISOString(),
+        updatedAt: p.updatedAt.toISOString()
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  async findProposalsByUserId(userId: string, isConfirmed?: boolean): Promise<any[]> {
+    try {
+      const where: any = { userId };
+      if (typeof isConfirmed === 'boolean') {
+        where.isConfirmed = isConfirmed;
+      }
+      const list = await executeWithFastTimeout(() => prisma.proposedPipelineUpdate.findMany({ where }));
+      return list.map(p => ({
+        id: p.id,
+        userId: p.userId,
+        matchedApplicationId: p.matchedApplicationId || undefined,
+        emailMessageId: p.emailMessageId || undefined,
+        companyName: p.companyName,
+        jobTitle: p.jobTitle,
+        emailCategory: p.emailCategory as any,
+        proposedStatus: p.proposedStatus,
+        extractedDetails: p.extractedDetails as any,
+        isConfirmed: p.isConfirmed,
+        createdAt: p.createdAt.toISOString(),
+        updatedAt: p.updatedAt.toISOString()
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  async confirmProposal(id: string, applicationId?: string, proposedStatus?: ApplicationStatus) {
+    try {
+      await executeWithFastTimeout(() => prisma.proposedPipelineUpdate.update({
+        where: { id },
+        data: { isConfirmed: true }
+      }));
+
+      if (applicationId && proposedStatus) {
+        const app = await executeWithFastTimeout(() => prisma.application.findUnique({ where: { id: applicationId } }));
+        const fromStatus = app?.status || ApplicationStatus.APPLIED;
+
+        await executeWithFastTimeout(() => prisma.application.update({
+          where: { id: applicationId },
+          data: { status: proposedStatus }
+        }));
+
+        await executeWithFastTimeout(() => prisma.applicationEvent.create({
+          data: {
+            applicationId,
+            fromStatus,
+            toStatus: proposedStatus,
+            note: `Updated via Inbox Intelligence Proposal ${id}`
+          }
+        }));
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async deleteProposal(id: string) {
+    try {
+      return await executeWithFastTimeout(() => prisma.proposedPipelineUpdate.delete({ where: { id } }));
+    } catch {
+      return null;
+    }
+  }
+}
+
 // Export singleton repository instances
 export const userRepository = new UserRepository();
 export const profileRepository = new ProfileRepository();
@@ -749,3 +903,4 @@ export const applicationRepository = new ApplicationRepository();
 export const recruiterRepository = new RecruiterRepository();
 export const followUpRepository = new FollowUpRepository();
 export const emailRepository = new EmailRepository();
+export const inboxRepository = new InboxRepository();

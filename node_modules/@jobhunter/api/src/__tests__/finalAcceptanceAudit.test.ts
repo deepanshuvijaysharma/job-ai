@@ -170,10 +170,10 @@ describe('JobHunter AI Step 10: Complete End-to-End Final Acceptance Verificatio
     expect(extracted.category).toBe('INTERVIEW_INVITATION');
 
     // 8. Generate Proposal & Confirm User Pipeline Transition
-    const proposal = inboxIntelligenceService.createProposal('demo-user-123', extracted);
+    const proposal = await inboxIntelligenceService.createProposal('demo-user-123', extracted);
     expect(proposal.isConfirmed).toBe(false);
 
-    const confirmedProposal = inboxIntelligenceService.confirmProposal(proposal.id);
+    const confirmedProposal = await inboxIntelligenceService.confirmProposal(proposal.id);
     expect(confirmedProposal.isConfirmed).toBe(true);
 
     // 9. Automatic Stop Condition Suppresses Follow-Ups

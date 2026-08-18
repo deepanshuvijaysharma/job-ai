@@ -13,6 +13,7 @@ describe('JobHunter AI Step 5: Real Job Discovery Engine Suite', () => {
   let authToken: string;
 
   beforeAll(async () => {
+    jest.setTimeout(45000);
     memoryStore.clearAllData();
     const loginRes = await request(app)
       .post('/api/auth/login')

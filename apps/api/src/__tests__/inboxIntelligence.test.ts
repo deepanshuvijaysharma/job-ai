@@ -80,7 +80,8 @@ describe('JobHunter AI Step 9: Inbox Intelligence & Pipeline Automation Suite', 
     expect(confirmRes.body.proposal.proposedStatus).toBe('INTERVIEW_SCHEDULED');
 
     // Verify application status updated in store
-    const appItem = memoryStore.applications.get('demo-user-123_job-101') || Array.from(memoryStore.applications.values())[0];
+    const matchedId = procRes.body.proposal.matchedApplicationId;
+    const appItem = Array.from(memoryStore.applications.values()).find(a => a.id === matchedId);
     expect(appItem).toBeDefined();
     expect(appItem?.status).toBe('INTERVIEW_SCHEDULED');
   });

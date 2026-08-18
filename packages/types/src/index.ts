@@ -317,3 +317,74 @@ export interface FollowUpTaskDTO {
   body: string;
   createdAt: string;
 }
+
+export interface InboxFetchInput {
+  userId: string;
+  accountId: string;
+  provider: 'gmail' | 'outlook' | 'smtp';
+  accessToken?: string;
+  sinceDate?: Date;
+  maxResults?: number;
+}
+
+export interface InboxMessage {
+  id: string;
+  threadId?: string;
+  externalMessageId: string;
+  accountId: string;
+  senderEmail: string;
+  senderName?: string;
+  recipientEmail?: string;
+  subject: string;
+  body: string;
+  snippet?: string;
+  receivedAt: string;
+  isRead: boolean;
+}
+
+export interface InboxThread {
+  threadId: string;
+  subject: string;
+  messages: InboxMessage[];
+}
+
+export type EmailCategory =
+  | 'RECRUITER_RESPONSE'
+  | 'INTERVIEW_INVITATION'
+  | 'ASSESSMENT'
+  | 'APPLICATION_CONFIRMATION'
+  | 'REJECTION'
+  | 'OFFER'
+  | 'FOLLOW_UP'
+  | 'OTHER';
+
+export interface ExtractedEmailData {
+  category: EmailCategory;
+  companyName?: string;
+  jobTitle?: string;
+  recruiterName?: string;
+  recruiterEmail?: string;
+  interviewDate?: string;
+  interviewTime?: string;
+  timezone?: string;
+  meetingLink?: string;
+  assessmentDeadline?: string;
+  compensationDetails?: string;
+  nextAction?: string;
+  confidence: number;
+}
+
+export interface ProposedPipelineUpdateDTO {
+  id: string;
+  userId: string;
+  matchedApplicationId?: string;
+  emailMessageId?: string;
+  companyName: string;
+  jobTitle: string;
+  emailCategory: EmailCategory;
+  proposedStatus: ApplicationStatus;
+  extractedDetails: ExtractedEmailData;
+  isConfirmed: boolean;
+  createdAt: string;
+  updatedAt?: string;
+}
