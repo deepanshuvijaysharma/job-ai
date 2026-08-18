@@ -250,6 +250,11 @@ export interface EmailAccountDTO {
   isDefault: boolean;
   isConnected: boolean;
   lastTestedAt?: string;
+  gmailHistoryId?: string;
+  outlookDeltaLink?: string;
+  lastInboxSyncAt?: string;
+  inboxSyncStatus?: string;
+  inboxSyncError?: string;
   createdAt: string;
 }
 
@@ -323,6 +328,8 @@ export interface InboxFetchInput {
   accountId: string;
   provider: 'gmail' | 'outlook' | 'smtp';
   accessToken?: string;
+  historyId?: string;
+  deltaLink?: string;
   sinceDate?: Date;
   maxResults?: number;
 }
@@ -384,6 +391,8 @@ export interface ProposedPipelineUpdateDTO {
   emailCategory: EmailCategory;
   proposedStatus: ApplicationStatus;
   extractedDetails: ExtractedEmailData;
+  matchQuality?: 'HIGH' | 'MEDIUM' | 'LOW' | 'AMBIGUOUS';
+  matchReason?: string;
   isConfirmed: boolean;
   createdAt: string;
   updatedAt?: string;

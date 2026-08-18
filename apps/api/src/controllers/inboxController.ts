@@ -1,57 +1,26 @@
 import { Response } from 'express';
 import { AuthenticatedRequest } from '../middleware/authMiddleware';
 import { inboxIntelligenceService } from '../services/email/inboxIntelligence';
-import { emailRepository, inboxRepository } from '../repositories/prismaRepository';
-import { InboxProviderFactory } from '../services/email/inboxProvider';
+import { inboxRepository } from '../repositories/prismaRepository';
+import { inboxSyncWorker } from '../workers/inboxSyncWorker';
 
 export const syncInbox = async (req: AuthenticatedRequest, res: Response) => {
   const userId = req.user?.id || 'demo-user-123';
 
   try {
-    const connectedAccounts = await emailRepository.findAccountsByUserId(userId);
-    let totalSynced = 0;
-
-    for (const account of connectedAccounts) {
-      const provider = InboxProviderFactory.getProvider(account.provider);
-      const messages = await provider.fetchMessages({
-        userId,
-        accountId: account.id,
-        provider: account.provider as any,
-        accessToken: account.encryptedAccessToken || undefined,
-        maxResults: 10
-      });
-
-      for (const msg of messages) {
-        await inboxRepository.upsertInboxMessage({
-          id: msg.id,
-          accountId: account.id,
-          externalMessageId: msg.externalMessageId,
-          threadId: msg.threadId,
-          senderEmail: msg.senderEmail,
-          senderName: msg.senderName,
-          subject: msg.subject,
-          body: msg.body
-        });
-
-        // Run intelligence & generate proposal for each unread/fresh message
-        const extracted = await inboxIntelligenceService.processIncomingEmail({
-          senderEmail: msg.senderEmail,
-          senderName: msg.senderName,
-          subject: msg.subject,
-          body: msg.body
-        });
-
-        const matchedApp = await inboxIntelligenceService.matchApplication(userId, msg, extracted);
-        await inboxIntelligenceService.createProposal(userId, extracted, matchedApp, msg.id);
-        totalSynced++;
-      }
-    }
-
+    const result = await inboxSyncWorker.processSyncJob({ userId, maxResults: 10 });
     return res.json({
-      message: `Inbox sync completed successfully. Synced ${totalSynced} inbound messages across ${connectedAccounts.length} connected accounts.`,
-      syncedCount: totalSynced
+      message: `Inbox sync completed with status: ${result.status}`,
+      syncedCount: result.syncedMessagesCount,
+      status: result.status
     });
   } catch (err: any) {
+    if (err.name === 'ProviderAuthError') {
+      return res.status(401).json({ error: err.message, status: 'REAUTH_REQUIRED' });
+    }
+    if (err.name === 'ProviderRateLimitError') {
+      return res.status(429).json({ error: err.message, status: 'RATE_LIMITED' });
+    }
     return res.status(500).json({ error: err.message || 'Failed to sync inbox' });
   }
 };
@@ -78,18 +47,27 @@ export const processEmail = async (req: AuthenticatedRequest, res: Response) => 
       body
     });
 
-    const matchedApp = await inboxIntelligenceService.matchApplication(
+    const matchResult = await inboxIntelligenceService.matchApplicationAdvanced(
       userId, 
       { senderEmail: senderEmail || 'hr@company.com', subject, body, threadId },
       extracted
     );
 
-    const proposal = await inboxIntelligenceService.createProposal(userId, extracted, matchedApp);
+    const proposal = await inboxIntelligenceService.createProposal(
+      userId,
+      extracted,
+      matchResult.application,
+      undefined,
+      matchResult.matchQuality,
+      matchResult.matchReason
+    );
 
     return res.json({
       message: `AI Detected ${extracted.category}: Proposed update to ${proposal.proposedStatus}`,
       proposal,
-      extracted
+      extracted,
+      matchQuality: matchResult.matchQuality,
+      matchReason: matchResult.matchReason
     });
   } catch (err: any) {
     return res.status(500).json({ error: err.message || 'Failed to process email' });
@@ -111,13 +89,19 @@ export const getPendingProposals = async (req: AuthenticatedRequest, res: Respon
 };
 
 export const confirmProposal = async (req: AuthenticatedRequest, res: Response) => {
-  const { proposalId } = req.body;
+  const userId = req.user?.id || 'demo-user-123';
+  const proposalId = req.params.id || req.body.proposalId;
 
   if (!proposalId) {
     return res.status(400).json({ error: 'proposalId is required' });
   }
 
   try {
+    const existing = await inboxRepository.findProposalById(proposalId) || inboxIntelligenceService.proposedUpdatesMap.get(proposalId);
+    if (existing && existing.userId && existing.userId !== userId) {
+      return res.status(403).json({ error: 'Unauthorized proposal access' });
+    }
+
     const confirmed = await inboxIntelligenceService.confirmProposal(proposalId);
     return res.json({
       message: `Confirmed! Application pipeline updated to ${confirmed.proposedStatus}`,
@@ -129,7 +113,7 @@ export const confirmProposal = async (req: AuthenticatedRequest, res: Response) 
 };
 
 export const rejectProposal = async (req: AuthenticatedRequest, res: Response) => {
-  const { proposalId } = req.body;
+  const proposalId = req.params.id || req.body.proposalId;
 
   if (!proposalId) {
     return res.status(400).json({ error: 'proposalId is required' });

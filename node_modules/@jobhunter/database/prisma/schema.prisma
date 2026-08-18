@@ -337,12 +337,17 @@ model EmailAccount {
   expiresAt             DateTime?
   smtpHost              String?
   smtpPort              Int?
-  isDefault             Boolean  @default(false)
-  isConnected           Boolean  @default(true)
+  isDefault             Boolean   @default(false)
+  isConnected           Boolean   @default(true)
   lastTestedAt          DateTime?
-  dailySentCount        Int      @default(0)
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  dailySentCount        Int       @default(0)
+  gmailHistoryId        String?
+  outlookDeltaLink      String?
+  lastInboxSyncAt       DateTime?
+  inboxSyncStatus       String?   @default("IDLE") // IDLE | SYNCING | SUCCESS | REAUTH_REQUIRED | RATE_LIMITED | ERROR
+  inboxSyncError        String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
   messages     EmailMessage[]
 }
@@ -384,6 +389,7 @@ model EmailMessage {
   failureReason     String?
   classification    EmailClassification?
   aiReasoning       String?
+  inboxIdentity     InboxMessageIdentity?
   createdAt         DateTime             @default(now())
 }
 
@@ -518,9 +524,23 @@ model ProposedPipelineUpdate {
   emailCategory        String
   proposedStatus       ApplicationStatus
   extractedDetails     Json
+  matchQuality         String            @default("HIGH") // HIGH | MEDIUM | LOW | AMBIGUOUS
+  matchReason          String?
   isConfirmed          Boolean           @default(false)
   createdAt            DateTime          @default(now())
   updatedAt            DateTime          @updatedAt
 
   @@index([userId, isConfirmed])
+}
+
+model InboxMessageIdentity {
+  id                String        @id @default(uuid())
+  provider          String        // GMAIL | OUTLOOK
+  providerMessageId String
+  emailMessageId    String?       @unique
+  emailMessage      EmailMessage? @relation(fields: [emailMessageId], references: [id], onDelete: Cascade)
+  createdAt         DateTime      @default(now())
+
+  @@unique([provider, providerMessageId])
+  @@index([provider, providerMessageId])
 }

@@ -743,6 +743,38 @@ export class EmailRepository {
 // 10. Inbox Repository
 // ==========================================
 export class InboxRepository {
+  async upsertInboxMessageIdentity(provider: string, providerMessageId: string, emailMessageId?: string) {
+    try {
+      return await executeWithFastTimeout(() => prisma.inboxMessageIdentity.upsert({
+        where: {
+          provider_providerMessageId: { provider, providerMessageId }
+        },
+        create: {
+          provider,
+          providerMessageId,
+          emailMessageId
+        },
+        update: {
+          emailMessageId
+        }
+      }));
+    } catch {
+      return null;
+    }
+  }
+
+  async findIdentity(provider: string, providerMessageId: string) {
+    try {
+      return await executeWithFastTimeout(() => prisma.inboxMessageIdentity.findUnique({
+        where: {
+          provider_providerMessageId: { provider, providerMessageId }
+        }
+      }));
+    } catch {
+      return null;
+    }
+  }
+
   async upsertInboxMessage(data: {
     id: string;
     accountId: string;
@@ -752,8 +784,12 @@ export class InboxRepository {
     senderName?: string;
     subject: string;
     body: string;
+    provider?: string;
   }) {
     try {
+      const provider = data.provider || (data.id.includes('gmail') ? 'GMAIL' : 'OUTLOOK');
+      await this.upsertInboxMessageIdentity(provider, data.externalMessageId, data.id);
+
       return await executeWithFastTimeout(() => prisma.emailMessage.upsert({
         where: { id: data.id },
         create: {
@@ -793,6 +829,8 @@ export class InboxRepository {
           emailCategory: proposal.emailCategory,
           proposedStatus: proposal.proposedStatus,
           extractedDetails: proposal.extractedDetails as any,
+          matchQuality: proposal.matchQuality || 'HIGH',
+          matchReason: proposal.matchReason || null,
           isConfirmed: proposal.isConfirmed
         },
         update: {
@@ -818,6 +856,8 @@ export class InboxRepository {
         emailCategory: p.emailCategory as any,
         proposedStatus: p.proposedStatus,
         extractedDetails: p.extractedDetails as any,
+        matchQuality: p.matchQuality as any,
+        matchReason: p.matchReason || undefined,
         isConfirmed: p.isConfirmed,
         createdAt: p.createdAt.toISOString(),
         updatedAt: p.updatedAt.toISOString()
@@ -844,6 +884,8 @@ export class InboxRepository {
         emailCategory: p.emailCategory as any,
         proposedStatus: p.proposedStatus,
         extractedDetails: p.extractedDetails as any,
+        matchQuality: p.matchQuality as any,
+        matchReason: p.matchReason || undefined,
         isConfirmed: p.isConfirmed,
         createdAt: p.createdAt.toISOString(),
         updatedAt: p.updatedAt.toISOString()
@@ -853,34 +895,72 @@ export class InboxRepository {
     }
   }
 
-  async confirmProposal(id: string, applicationId?: string, proposedStatus?: ApplicationStatus) {
+  async confirmProposal(id: string, applicationId?: string, proposedStatus?: ApplicationStatus, userId?: string) {
     try {
-      await executeWithFastTimeout(() => prisma.proposedPipelineUpdate.update({
-        where: { id },
-        data: { isConfirmed: true }
+      return await executeWithFastTimeout(() => prisma.$transaction(async (tx) => {
+        const proposal = await tx.proposedPipelineUpdate.findUnique({ where: { id } });
+        if (!proposal) throw new Error('Proposal not found');
+        if (userId && proposal.userId !== userId) throw new Error('Unauthorized user confirmation');
+        if (proposal.isConfirmed) return true; // Idempotent return
+
+        if (applicationId && proposedStatus) {
+          const app = await tx.application.findUnique({ where: { id: applicationId } });
+          if (!app) throw new Error('Application not found');
+
+          const fromStatus = app.status;
+
+          await tx.application.update({
+            where: { id: applicationId },
+            data: { status: proposedStatus }
+          });
+
+          await tx.applicationEvent.create({
+            data: {
+              applicationId,
+              fromStatus,
+              toStatus: proposedStatus,
+              note: `Updated via Inbox Intelligence Proposal ${id}`
+            }
+          });
+
+          await tx.followUp.updateMany({
+            where: { applicationId, status: { in: ['SCHEDULED', 'DUE', 'DRAFT'] } },
+            data: { status: 'CANCELLED', cancelReason: `Confirmed proposal: ${proposedStatus}`, cancelledAt: new Date() }
+          });
+        }
+
+        await tx.proposedPipelineUpdate.update({
+          where: { id },
+          data: { isConfirmed: true }
+        });
+
+        return true;
       }));
-
-      if (applicationId && proposedStatus) {
-        const app = await executeWithFastTimeout(() => prisma.application.findUnique({ where: { id: applicationId } }));
-        const fromStatus = app?.status || ApplicationStatus.APPLIED;
-
-        await executeWithFastTimeout(() => prisma.application.update({
-          where: { id: applicationId },
-          data: { status: proposedStatus }
-        }));
-
-        await executeWithFastTimeout(() => prisma.applicationEvent.create({
-          data: {
-            applicationId,
-            fromStatus,
-            toStatus: proposedStatus,
-            note: `Updated via Inbox Intelligence Proposal ${id}`
-          }
-        }));
-      }
-      return true;
     } catch {
       return false;
+    }
+  }
+
+  async updateAccountSyncState(accountId: string, data: {
+    gmailHistoryId?: string;
+    outlookDeltaLink?: string;
+    lastInboxSyncAt?: Date;
+    inboxSyncStatus?: string;
+    inboxSyncError?: string;
+  }) {
+    try {
+      return await executeWithFastTimeout(() => prisma.emailAccount.update({
+        where: { id: accountId },
+        data: {
+          gmailHistoryId: data.gmailHistoryId,
+          outlookDeltaLink: data.outlookDeltaLink,
+          lastInboxSyncAt: data.lastInboxSyncAt || new Date(),
+          inboxSyncStatus: data.inboxSyncStatus,
+          inboxSyncError: data.inboxSyncError
+        }
+      }));
+    } catch {
+      return null;
     }
   }
 
