@@ -482,6 +482,105 @@ export class FollowUpRepository {
   }
 }
 
+// ==========================================
+// 9. Email Repository
+// ==========================================
+export class EmailRepository {
+  async findAccountById(id: string) {
+    try {
+      return await executeWithFastTimeout(() => prisma.emailAccount.findUnique({ where: { id } }));
+    } catch {
+      return null;
+    }
+  }
+
+  async findAccountsByUserId(userId: string) {
+    try {
+      return await executeWithFastTimeout(() => prisma.emailAccount.findMany({ where: { userId, isConnected: true } }));
+    } catch {
+      return [];
+    }
+  }
+
+  async upsertAccount(data: {
+    id: string;
+    userId: string;
+    provider: string;
+    emailAddress: string;
+    encryptedAccessToken?: string;
+    encryptedRefreshToken?: string;
+    expiresAt?: Date;
+    isDefault?: boolean;
+    isConnected?: boolean;
+    lastTestedAt?: Date;
+    dailySentCount?: number;
+  }) {
+    try {
+      return await executeWithFastTimeout(() => prisma.emailAccount.upsert({
+        where: { id: data.id },
+        create: {
+          id: data.id,
+          userId: data.userId,
+          provider: data.provider,
+          emailAddress: data.emailAddress,
+          encryptedAccessToken: data.encryptedAccessToken,
+          encryptedRefreshToken: data.encryptedRefreshToken,
+          expiresAt: data.expiresAt,
+          isDefault: data.isDefault ?? true,
+          isConnected: data.isConnected ?? true,
+          lastTestedAt: data.lastTestedAt,
+          dailySentCount: data.dailySentCount ?? 0
+        },
+        update: {
+          provider: data.provider,
+          emailAddress: data.emailAddress,
+          encryptedAccessToken: data.encryptedAccessToken,
+          encryptedRefreshToken: data.encryptedRefreshToken,
+          expiresAt: data.expiresAt,
+          isDefault: data.isDefault,
+          isConnected: data.isConnected,
+          lastTestedAt: data.lastTestedAt,
+          dailySentCount: data.dailySentCount
+        }
+      }));
+    } catch {
+      return null;
+    }
+  }
+
+  async countTodaySuccessfulSends(accountId: string): Promise<number> {
+    try {
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+
+      return await executeWithFastTimeout(() => prisma.emailMessage.count({
+        where: {
+          accountId,
+          sentAt: { gte: startOfDay },
+          isApproved: true
+        }
+      }));
+    } catch {
+      return 0;
+    }
+  }
+
+  async disconnectAccount(id: string) {
+    try {
+      return await executeWithFastTimeout(() => prisma.emailAccount.update({
+        where: { id },
+        data: {
+          encryptedAccessToken: null,
+          encryptedRefreshToken: null,
+          isConnected: false
+        }
+      }));
+    } catch {
+      return null;
+    }
+  }
+}
+
 // Export singleton repository instances
 export const userRepository = new UserRepository();
 export const profileRepository = new ProfileRepository();
@@ -491,3 +590,4 @@ export const jobMatchRepository = new JobMatchRepository();
 export const applicationRepository = new ApplicationRepository();
 export const recruiterRepository = new RecruiterRepository();
 export const followUpRepository = new FollowUpRepository();
+export const emailRepository = new EmailRepository();

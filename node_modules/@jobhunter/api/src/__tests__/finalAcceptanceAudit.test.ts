@@ -7,6 +7,7 @@ import { recruiterService } from '../services/recruiter/recruiterService';
 import { emailGeneratorService } from '../services/outreach/emailGenerator';
 import { queuedEmailsMap } from '../controllers/outreachController';
 import { emailOAuthService } from '../services/email/emailOAuthService';
+import { oauthStateService } from '../services/email/oauthStateService';
 import { inboxIntelligenceService } from '../services/email/inboxIntelligence';
 import { followUpEngineService } from '../services/outreach/followUpEngine';
 import { RemotePreference } from '@jobhunter/types';
@@ -129,7 +130,8 @@ describe('JobHunter AI Step 10: Complete End-to-End Final Acceptance Verificatio
     expect(followUps.length).toBe(3); // Day 2, 5, 10
 
     // 6. Connect OAuth & Dispatch Email
-    await emailOAuthService.handleOAuthCallback('demo-user-123', 'gmail', 'auth-code-123');
+    const stateToken = oauthStateService.generateState('demo-user-123', 'gmail');
+    await emailOAuthService.handleOAuthCallback('demo-user-123', 'gmail', 'auth-code-123', stateToken);
     const dispatchLog = await emailOAuthService.dispatchApprovedOutreach('demo-user-123', msgId);
     expect(dispatchLog.status).toBe('SENT');
 
