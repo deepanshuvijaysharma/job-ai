@@ -121,7 +121,7 @@ describe('JobHunter AI Step 10: Complete End-to-End Final Acceptance Verificatio
     });
 
     // Schedule Follow-ups upon dispatch
-    const followUps = followUpEngineService.scheduleFollowUps({
+    const followUps = await followUpEngineService.scheduleFollowUps({
       userId: 'demo-user-123',
       jobId,
       jobTitle: rawJob.title,

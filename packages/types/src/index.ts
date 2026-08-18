@@ -266,3 +266,54 @@ export interface EmailDispatchLogDTO {
   status: 'SENT' | 'FAILED' | 'PENDING';
   failureReason?: string | null;
 }
+
+export type OutreachMessageType =
+  | 'INITIAL_OUTREACH'
+  | 'FIRST_CONTACT'
+  | 'APPLICATION_FOLLOWUP'
+  | 'HIRING_MANAGER_OUTREACH'
+  | 'REFERRAL_REQUEST'
+  | 'INTERVIEW_THANK_YOU'
+  | 'FINAL_FOLLOWUP'
+  | 'RECRUITER_RESPONSE';
+
+export interface QueuedEmailDTO {
+  id: string;
+  userId: string;
+  jobId: string;
+  jobTitle: string;
+  companyName: string;
+  recruiterId: string;
+  recruiterName: string;
+  recruiterEmail?: string;
+  recruiterRole: string;
+  resumeId?: string;
+  subject: string;
+  body: string;
+  templateType: OutreachMessageType;
+  isApproved: boolean;
+  approvedAt?: string;
+  sentAt?: string;
+  aiReasoning: string;
+  confidence: number;
+  createdAt: string;
+}
+
+export interface FollowUpTaskDTO {
+  id: string;
+  userId: string;
+  jobId: string;
+  jobTitle: string;
+  companyName: string;
+  recruiterId: string;
+  recruiterName: string;
+  recruiterEmail?: string;
+  stage: number;
+  scheduledForDays: number;
+  scheduledAt: string;
+  status: 'DRAFT' | 'APPROVED' | 'SENT' | 'REPLIED' | 'DECLINED' | 'FOLLOWUP_DUE' | 'CANCELLED' | 'JOB_CLOSED';
+  stopReason?: string;
+  subject: string;
+  body: string;
+  createdAt: string;
+}

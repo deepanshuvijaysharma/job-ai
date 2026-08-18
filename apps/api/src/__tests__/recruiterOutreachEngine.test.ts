@@ -79,7 +79,7 @@ describe('JobHunter AI Step 8: Recruiter Outreach Engine Suite', () => {
   });
 
   it('4. Follow-Up Scheduling: Schedules Day 2, Day 5, and Day 10 follow-ups upon outreach approval', async () => {
-    const tasks = followUpEngineService.scheduleFollowUps({
+    const tasks = await followUpEngineService.scheduleFollowUps({
       userId: 'demo-user-123',
       jobId: 'job-101',
       jobTitle: 'Backend Engineer',

@@ -468,14 +468,14 @@ export class FollowUpRepository {
 
   async create(data: { applicationId: string; scheduledFor: Date; stepNumber: number; suggestedBody?: string }) {
     try {
-      return await prisma.followUp.create({
+      return await executeWithFastTimeout(() => prisma.followUp.create({
         data: {
           applicationId: data.applicationId,
           scheduledFor: data.scheduledFor,
           stepNumber: data.stepNumber,
           suggestedBody: data.suggestedBody
         }
-      });
+      }));
     } catch {
       return null;
     }

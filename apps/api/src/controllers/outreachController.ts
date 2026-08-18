@@ -172,7 +172,7 @@ export const approveEmails = async (req: AuthenticatedRequest, res: Response) =>
       }
 
       // Schedule Day 2, Day 5, Day 10 automated follow-ups via followUpEngineService
-      followUpEngineService.scheduleFollowUps({
+      await followUpEngineService.scheduleFollowUps({
         userId,
         jobId: msg.jobId,
         jobTitle: msg.jobTitle,
