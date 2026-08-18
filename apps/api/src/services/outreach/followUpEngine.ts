@@ -1,4 +1,4 @@
-import { followUpRepository } from '../../repositories/prismaRepository';
+import { followUpRepository, userRepository, profileRepository, emailRepository } from '../../repositories/prismaRepository';
 import { emailGeneratorService } from './emailGenerator';
 import { queuedEmailsMap } from '../../controllers/outreachController';
 import { OutreachMessageType } from '@jobhunter/types';
@@ -43,6 +43,27 @@ export class FollowUpEngineService {
   private fallbackCache: Map<string, FollowUpTaskState> = new Map();
 
   /**
+   * Helper: Dynamically fetch candidate identity from PostgreSQL User/Profile
+   */
+  public async resolveCandidateName(userId: string, explicitCandidateName?: string): Promise<string> {
+    if (explicitCandidateName && explicitCandidateName.trim().length > 0 && explicitCandidateName !== 'Candidate') {
+      return explicitCandidateName.trim();
+    }
+
+    const user = await userRepository.findById(userId);
+    if (user && user.name && user.name.trim().length > 0 && user.name !== 'Candidate') {
+      return user.name.trim();
+    }
+
+    const profile = await profileRepository.findByUserId(userId);
+    if (profile && (profile as any).fullName && (profile as any).fullName.trim().length > 0) {
+      return (profile as any).fullName.trim();
+    }
+
+    return '';
+  }
+
+  /**
    * 1. Schedule Multi-Stage Follow-Ups in PostgreSQL (SCHEDULED status)
    */
   public async scheduleFollowUps(outreach: {
@@ -55,9 +76,10 @@ export class FollowUpEngineService {
     recruiterEmail?: string;
     candidateName?: string;
   }): Promise<FollowUpTaskState[]> {
-    const candidateName = outreach.candidateName || 'Deepanshu Sharma';
+    const candidateName = await this.resolveCandidateName(outreach.userId, outreach.candidateName);
     const recruiterFirstName = emailGeneratorService.extractFirstName(outreach.recruiterName);
     const greeting = recruiterFirstName ? `Hi ${recruiterFirstName},` : 'Hello,';
+    const signature = candidateName ? `\n\nBest regards,\n${candidateName}` : `\n\nBest regards,`;
 
     const stages = [
       { stage: 1, days: 2, name: 'Stage 1 Nudge' },
@@ -76,8 +98,8 @@ export class FollowUpEngineService {
         : `Following up: ${outreach.jobTitle} at ${outreach.companyName}`;
 
       const body = s.stage === 3
-        ? `${greeting}\n\nI am sending a final follow-up regarding my application for the ${outreach.jobTitle} role at ${outreach.companyName}.\n\nIf the position is still open, I would appreciate the opportunity to connect.\n\nBest regards,\n${candidateName}`
-        : `${greeting}\n\nI wanted to briefly follow up on my previous message regarding the ${outreach.jobTitle} role at ${outreach.companyName}.\n\nBest regards,\n${candidateName}`;
+        ? `${greeting}\n\nI am sending a final follow-up regarding my application for the ${outreach.jobTitle} role at ${outreach.companyName}.\n\nIf the position is still open, I would appreciate the opportunity to connect.${signature}`
+        : `${greeting}\n\nI wanted to briefly follow up on my previous message regarding the ${outreach.jobTitle} role at ${outreach.companyName}.${signature}`;
 
       const taskState: FollowUpTaskState = {
         id: taskId,
@@ -119,33 +141,36 @@ export class FollowUpEngineService {
   }
 
   /**
-   * 2. Query Genuine Due Follow-Ups directly from PostgreSQL (scheduledAt <= referenceDate)
+   * 2. Query Genuine Due Follow-Ups directly from PostgreSQL filtered strictly by userId
    */
   public async getDueFollowUps(userId: string, referenceDate: Date = new Date()): Promise<FollowUpTaskState[]> {
-    const dbDue = await followUpRepository.findDueFollowUps(referenceDate);
+    const dbDue = await followUpRepository.findDueFollowUps(userId, referenceDate);
 
     if (dbDue && dbDue.length > 0) {
-      return dbDue.map(f => ({
-        id: f.id,
-        userId: f.userId || userId,
-        applicationId: f.applicationId,
-        jobId: f.applicationId,
-        jobTitle: f.application?.job?.title || 'Engineering Role',
-        companyName: (f.application?.job as any)?.companyName || (f.application?.job as any)?.company?.name || 'Target Company',
-        recruiterId: f.recruiterId || 'rec-1',
-        recruiterName: f.recruiter?.name || 'Recruiter',
-        recruiterEmail: f.recruiter?.email || undefined,
-        candidateName: 'Deepanshu Sharma',
-        stage: f.stepNumber,
-        scheduledForDays: f.stepNumber === 1 ? 2 : f.stepNumber === 2 ? 5 : 10,
-        scheduledAt: f.scheduledAt.toISOString(),
-        status: (new Date(f.scheduledAt).getTime() <= referenceDate.getTime() ? 'DUE' : f.status) as FollowUpStatus,
-        cancelReason: f.cancelReason || undefined,
-        cancelledAt: f.cancelledAt ? f.cancelledAt.toISOString() : undefined,
-        subject: f.suggestedSubject || `Follow-up re: Application`,
-        body: f.suggestedBody || `Following up...`,
-        createdAt: f.createdAt.toISOString(),
-        updatedAt: f.updatedAt ? f.updatedAt.toISOString() : undefined
+      return Promise.all(dbDue.map(async f => {
+        const candidateName = await this.resolveCandidateName(userId);
+        return {
+          id: f.id,
+          userId: f.userId || userId,
+          applicationId: f.applicationId,
+          jobId: f.applicationId,
+          jobTitle: f.application?.job?.title || 'Engineering Role',
+          companyName: (f.application?.job as any)?.companyName || (f.application?.job as any)?.company?.name || 'Target Company',
+          recruiterId: f.recruiterId || 'rec-1',
+          recruiterName: f.recruiter?.name || 'Recruiter',
+          recruiterEmail: f.recruiter?.email || undefined,
+          candidateName,
+          stage: f.stepNumber,
+          scheduledForDays: f.stepNumber === 1 ? 2 : f.stepNumber === 2 ? 5 : 10,
+          scheduledAt: f.scheduledAt.toISOString(),
+          status: (new Date(f.scheduledAt).getTime() <= referenceDate.getTime() ? 'DUE' : f.status) as FollowUpStatus,
+          cancelReason: f.cancelReason || undefined,
+          cancelledAt: f.cancelledAt ? f.cancelledAt.toISOString() : undefined,
+          subject: f.suggestedSubject || `Follow-up re: Application`,
+          body: f.suggestedBody || `Following up...`,
+          createdAt: f.createdAt.toISOString(),
+          updatedAt: f.updatedAt ? f.updatedAt.toISOString() : undefined
+        };
       }));
     }
 
@@ -165,7 +190,6 @@ export class FollowUpEngineService {
 
   /**
    * 3. Evaluate & Persist Stop Conditions in PostgreSQL
-   * Suppresses pending follow-ups when REPLIED, DECLINED, REJECTED, CANCELLED, JOB_CLOSED, INTERVIEW_SCHEDULED, etc. occurs.
    */
   public async evaluateStopCondition(
     jobId: string, 
@@ -183,11 +207,9 @@ export class FollowUpEngineService {
     recruiterId?: string,
     reason: string = 'STOP_CONDITION'
   ): Promise<number> {
-    // 1. Update PostgreSQL database (Source of Truth)
     const result = await followUpRepository.cancelFollowUpsForApplication(applicationId, recruiterId, reason);
     let suppressedCount = result?.count || 0;
 
-    // 2. Update Fallback Cache
     for (const [id, task] of this.fallbackCache.entries()) {
       if (task.applicationId === applicationId && (!recruiterId || task.recruiterId === recruiterId) && !task.cancelledAt) {
         task.status = 'CANCELLED';
@@ -202,7 +224,8 @@ export class FollowUpEngineService {
   }
 
   /**
-   * 4. Process Due Follow-Ups: Creates Human-Approval Drafts (isApproved = false, status = DRAFT)
+   * 4. Process Due Follow-Ups: Creates Human-Approval Drafts in PostgreSQL (isApproved = false, status = DRAFT)
+   * Enforces strict PostgreSQL-backed idempotency & durability across process restarts.
    */
   public async processDueFollowUps(userId: string, referenceDate: Date = new Date()): Promise<any[]> {
     const dueTasks = await this.getDueFollowUps(userId, referenceDate);
@@ -212,8 +235,50 @@ export class FollowUpEngineService {
       if (task.status === 'CANCELLED' || task.cancelledAt) continue;
 
       const draftId = `draft-fu-${task.id}`;
-      if (queuedEmailsMap.has(draftId)) continue; // Prevent duplicates
 
+      // Synchronous Lock & Idempotency Check for Parallel Workers
+      if (queuedEmailsMap.has(draftId)) {
+        const existing = queuedEmailsMap.get(draftId);
+        if (existing && existing.subject) {
+          continue;
+        }
+        if (existing && (existing as any).isReserved) {
+          continue;
+        }
+      }
+
+      if (task.status === 'DRAFT') continue;
+
+      // 1. PostgreSQL Idempotency Check
+      const existingMessage = await emailRepository.findMessageById(draftId);
+      if (existingMessage) {
+        if (!queuedEmailsMap.has(draftId)) {
+          queuedEmailsMap.set(draftId, {
+            id: existingMessage.id,
+            userId: task.userId,
+            jobId: task.jobId,
+            jobTitle: task.jobTitle,
+            companyName: task.companyName,
+            recruiterId: task.recruiterId,
+            recruiterName: task.recruiterName,
+            recruiterEmail: task.recruiterEmail,
+            recruiterRole: 'Recruiter',
+            subject: existingMessage.subject,
+            body: existingMessage.body,
+            templateType: (task.stage === 3 ? 'FINAL_FOLLOWUP' : 'APPLICATION_FOLLOWUP') as OutreachMessageType,
+            isApproved: existingMessage.isApproved,
+            aiReasoning: `Automated Stage ${task.stage} Follow-Up Draft due for human approval.`,
+            confidence: 0.95,
+            createdAt: existingMessage.createdAt.toISOString()
+          });
+        }
+        continue;
+      }
+
+      // Atomic lock out of concurrent calls
+      queuedEmailsMap.set(draftId, { id: draftId, isReserved: true } as any);
+
+      // 2. Build Queued Draft DTO
       const queuedDraft = {
         id: draftId,
         userId: task.userId,
@@ -233,7 +298,21 @@ export class FollowUpEngineService {
         createdAt: new Date().toISOString()
       };
 
+      // 3. Persist Draft in PostgreSQL EmailMessage table
+      await emailRepository.recordDispatchMessage({
+        id: draftId,
+        accountId: `acc-${task.userId}`,
+        recruiterId: task.recruiterId,
+        applicationId: task.applicationId,
+        subject: task.subject,
+        body: task.body,
+        isApproved: false,
+        status: 'DRAFT'
+      });
+
       queuedEmailsMap.set(draftId, queuedDraft);
+
+      // 4. Persist FollowUp -> Draft relationship (FollowUp.sourceMessageId = EmailMessage.id)
       await followUpRepository.updateFollowUpStatus(task.id, 'DRAFT', { sourceMessageId: draftId });
 
       if (this.fallbackCache.has(task.id)) {

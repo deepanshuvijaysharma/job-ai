@@ -68,9 +68,9 @@ export class UserRepository {
     }
   }
 
-  async create(data: { email: string; name: string; passwordHash?: string }) {
+  async create(data: { id?: string; email: string; name: string; passwordHash?: string }) {
     const user: UserDTO & { passwordHash: string } = {
-      id: `user-${Date.now()}`,
+      id: data.id || `user-${Date.now()}`,
       email: data.email,
       name: data.name,
       role: 'USER',
@@ -520,10 +520,11 @@ export class FollowUpRepository {
     }
   }
 
-  async findDueFollowUps(now: Date = new Date()) {
+  async findDueFollowUps(userId: string, now: Date = new Date()) {
     try {
       return await executeWithFastTimeout(() => prisma.followUp.findMany({
         where: {
+          userId,
           status: { in: ['SCHEDULED', 'DUE'] },
           scheduledAt: { lte: now },
           cancelledAt: null
