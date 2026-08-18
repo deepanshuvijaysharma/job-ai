@@ -1,6 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 
+import { getJwtSecret } from '../config/securityConfig';
+
 export interface AuthenticatedRequest extends Request {
   user?: {
     id: string;
@@ -16,7 +18,7 @@ export const authenticateJWT = (req: AuthenticatedRequest, res: Response, next: 
   }
 
   const token = authHeader.split(' ')[1];
-  const secret = process.env.JWT_SECRET || 'super-secret-jwt-key-jobhunter-ai-2026';
+  const secret = getJwtSecret();
 
   try {
     const decoded = jwt.verify(token, secret) as { id: string; email: string; role: string };

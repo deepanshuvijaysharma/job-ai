@@ -3,7 +3,9 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { memoryStore } from '../services/store';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-jwt-key-jobhunter-ai-2026';
+import { getJwtSecret } from '../config/securityConfig';
+
+const getSecret = () => getJwtSecret();
 
 export const register = async (req: Request, res: Response) => {
   try {
@@ -45,7 +47,7 @@ export const register = async (req: Request, res: Response) => {
       ]
     });
 
-    const token = jwt.sign({ id: userId, email, role: 'USER' }, JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign({ id: userId, email, role: 'USER' }, getSecret(), { expiresIn: '7d' });
     return res.status(201).json({
       token,
       user: { id: userId, email, name, role: 'USER' }
@@ -79,7 +81,7 @@ export const login = async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
-    const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, getSecret(), { expiresIn: '7d' });
     return res.json({
       token,
       user: { id: user.id, email: user.email, name: user.name, role: user.role }

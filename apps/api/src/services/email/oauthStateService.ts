@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 
-const SECRET_KEY = process.env.ENCRYPTION_SECRET || 'default-jwt-and-token-encryption-secret-key-32-chars!!';
+import { getEncryptionSecret } from '../../config/securityConfig';
+
 const STATE_EXPIRY_MS = 10 * 60 * 1000; // 10 minutes
 
 export interface OAuthStatePayload {
@@ -12,7 +13,7 @@ export interface OAuthStatePayload {
 
 export class OAuthStateService {
   private computeHmac(payloadStr: string): string {
-    return crypto.createHmac('sha256', SECRET_KEY).update(payloadStr).digest('hex');
+    return crypto.createHmac('sha256', getEncryptionSecret()).update(payloadStr).digest('hex');
   }
 
   public generateState(userId: string, provider: 'gmail' | 'outlook'): string {

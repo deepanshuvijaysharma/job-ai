@@ -1,11 +1,12 @@
 import crypto from 'crypto';
 
+import { getEncryptionSecret } from '../../config/securityConfig';
+
 const ALGORITHM = 'aes-256-cbc';
-const SECRET_KEY = process.env.ENCRYPTION_SECRET || 'default-jwt-and-token-encryption-secret-key-32-chars!!';
 
 export class TokenEncryptionService {
   private getKey(): Buffer {
-    return crypto.createHash('sha256').update(SECRET_KEY).digest();
+    return crypto.createHash('sha256').update(getEncryptionSecret()).digest();
   }
 
   public encryptToken(plainText: string): string {

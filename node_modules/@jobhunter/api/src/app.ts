@@ -13,12 +13,29 @@ import featureRoutes from './routes/featureRoutes';
 import emailRoutes from './routes/emailRoutes';
 import inboxRoutes from './routes/inboxRoutes';
 
+import { getCORSOrigins } from './config/securityConfig';
+
 dotenv.config();
 
 export const app = express();
 
 app.use(helmet());
-app.use(cors({ origin: '*' }));
+app.use(cors({
+  origin: (origin, callback) => {
+    const allowed = getCORSOrigins();
+    if (!origin) {
+      if (process.env.NODE_ENV === 'production' && allowed.length === 0) {
+        return callback(null, false);
+      }
+      return callback(null, true);
+    }
+    if (allowed.includes(origin)) {
+      return callback(null, true);
+    }
+    return callback(null, false);
+  },
+  credentials: true
+}));
 app.use(express.json({ limit: '10mb' }));
 
 // Health Check
