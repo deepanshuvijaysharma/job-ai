@@ -38,7 +38,6 @@ describe('JobHunter AI Step 3: Candidate & Resume Intelligence Upgrade & Verific
 
     expect(profile).toBeDefined();
 
-    // Read profile via API endpoint
     const res = await request(app)
       .get('/api/profile')
       .set('Authorization', `Bearer ${authToken}`);
@@ -72,19 +71,56 @@ describe('JobHunter AI Step 3: Candidate & Resume Intelligence Upgrade & Verific
     expect(['BASIC', 'INTERMEDIATE', 'LEARNING']).toContain(nodeSkill?.proficiency);
   });
 
-  it('4. Resume Parsing & Zero Hallucination: Missing info remains UNKNOWN/empty', async () => {
-    const rawText = 'Short resume content with JavaScript and React experience.';
-    const parsed = await resumeParserService.parseResumeText(rawText, 'Brief Resume');
+  it('4. Adversarial Resume Test: Zero hallucination on minimal candidate text', () => {
+    const adversarialText = `Candidate Name
 
-    expect(parsed).toBeDefined();
-    expect(parsed.skills.length).toBeGreaterThan(0);
-    // Unmentioned certifications or work experience must not be hallucinated
-    if (parsed.certifications.length === 0) {
-      expect(parsed.certifications).toEqual([]);
-    }
+Skills:
+JavaScript
+Node.js
+AWS
+
+Project:
+Weather App
+
+Education:
+B.Tech
+
+No company
+No certification
+No achievement
+No professional work experience`;
+
+    const parsed = resumeParserService.heuristicFallbackParse(adversarialText, 'Adversarial Resume');
+
+    expect(parsed.skills.map(s => s.normalizedName)).toEqual(expect.arrayContaining(['JavaScript', 'Node.js', 'AWS']));
+    
+    const awsSkill = parsed.skills.find(s => s.normalizedName === 'AWS');
+    expect(awsSkill).toBeDefined();
+    expect(awsSkill?.isProfessionalExperience).toBe(false);
+
+    expect(parsed.projects.map(p => p.title)).toContain('Weather App');
+    expect(parsed.education[0]?.degree).toBe('B.Tech');
+    expect(parsed.education[0]?.institution).toBeUndefined();
+    expect(parsed.workExperience).toEqual([]);
+    expect(parsed.certifications).toEqual([]);
+    expect(parsed.achievements).toEqual([]);
+    expect(parsed.experienceYears).toBe(0);
   });
 
-  it('5. Multi-Resume Management: Create and query Backend, Full Stack, Frontend, AI, and Support resumes', async () => {
+  it('5. Explicit Anti-Hallucination Safeguard Test: Forbidden placeholder strings are NEVER generated', () => {
+    const bareText = 'Skills: React.js, TypeScript. Project: Portfolio';
+    const parsed = resumeParserService.heuristicFallbackParse(bareText, 'Bare Resume');
+    const jsonString = JSON.stringify(parsed);
+
+    expect(jsonString).not.toContain('Software Solutions');
+    expect(jsonString).not.toContain('AWS Certified Developer');
+    expect(jsonString).not.toContain('40%');
+    expect(jsonString).not.toContain('2023 - Present');
+    expect(jsonString).not.toContain('microservices platform');
+    expect(jsonString).not.toContain('University');
+  });
+
+  it('6. Multi-Resume Management: Create and query Backend, Full Stack, Frontend resumes', async () => {
     const backendRes = await resumeRepository.create({
       userId: 'demo-user-123',
       title: 'Backend Resume',
@@ -93,7 +129,7 @@ describe('JobHunter AI Step 3: Candidate & Resume Intelligence Upgrade & Verific
       rawText: 'Expert in Node.js, Express, PostgreSQL, SQL, microservices, REST API, Redis',
       parsedData: {
         skills: [{ name: 'Node.js' }, { name: 'PostgreSQL' }, { name: 'Express' }],
-        projects: [{ title: 'MERN Job Portal' }]
+        projects: [{ title: 'MERN Microservices Engine', techStack: ['Node.js', 'Express'] }]
       }
     });
 
@@ -105,7 +141,7 @@ describe('JobHunter AI Step 3: Candidate & Resume Intelligence Upgrade & Verific
       rawText: 'Full Stack Engineer with Node.js, React.js, Express, MongoDB, TailwindCSS',
       parsedData: {
         skills: [{ name: 'Node.js' }, { name: 'React.js' }, { name: 'MongoDB' }],
-        projects: [{ title: 'SaaS Dashboard' }]
+        projects: [{ title: 'SaaS Dashboard', techStack: ['React.js', 'Node.js'] }]
       }
     });
 
@@ -128,7 +164,7 @@ describe('JobHunter AI Step 3: Candidate & Resume Intelligence Upgrade & Verific
     expect(allResumes.length).toBeGreaterThanOrEqual(3);
   });
 
-  it('6. Multi-Resume ↔ Job Matching & Explainability: Recommends highest matching resume version with breakdown', () => {
+  it('7. Multi-Resume ↔ Job Matching & Explainability: Recommends highest matching resume version with breakdown', () => {
     const resumes: ResumeDTO[] = [
       {
         id: 'res-backend',
@@ -140,7 +176,7 @@ describe('JobHunter AI Step 3: Candidate & Resume Intelligence Upgrade & Verific
         rawText: 'Node.js Express PostgreSQL SQL REST API microservices',
         skills: ['Node.js', 'Express', 'PostgreSQL', 'REST API', 'SQL'],
         keywords: ['Node.js', 'PostgreSQL', 'Express'],
-        projects: [{ title: 'MERN Microservices Engine', techStack: ['Node.js', 'Express', 'PostgreSQL'] }],
+        projects: [{ title: 'MERN Microservices Engine', techStack: ['Node.js', 'Express'] }],
         isDefault: true,
         createdAt: new Date().toISOString()
       },
@@ -199,22 +235,18 @@ describe('JobHunter AI Step 3: Candidate & Resume Intelligence Upgrade & Verific
     expect(evaluation.bestMatch?.explanation.matchedSkills).toContain('Node.js');
     expect(evaluation.bestMatch?.explanation.roleAlignment).toBe('Strong');
 
-    // All matches table present
     expect(evaluation.allMatches.length).toBe(3);
     expect(evaluation.allMatches[0].resumeTitle).toBe('Backend Resume');
   });
 
-  it('7. Candidate Intelligence Backend Restart Test: Candidate profile and resume versions survive backend restart', async () => {
-    // 1. Seed complete candidate dataset
+  it('8. Candidate Intelligence Backend Restart Test: Candidate profile and resume versions survive backend restart', async () => {
     await profileRepository.upsert('demo-user-123', {
       currentRole: 'Backend Solutions Architect',
       targetRoles: ['Principal Backend Engineer', 'Tech Lead']
     });
 
-    // 2. SIMULATE RESTART: Clear in-memory caches
     memoryStore.clearAllData();
 
-    // 3. Read profile and resumes again after restart
     const fetchedProfile = await profileRepository.findByUserId('demo-user-123');
     expect(fetchedProfile).toBeDefined();
 
