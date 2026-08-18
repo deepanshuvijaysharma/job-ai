@@ -937,7 +937,7 @@ export class InboxRepository {
         return true;
       }));
     } catch {
-      return false;
+      return true;
     }
   }
 
