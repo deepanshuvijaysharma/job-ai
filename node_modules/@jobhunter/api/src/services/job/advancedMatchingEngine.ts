@@ -47,10 +47,10 @@ export interface AdvancedMatchResult {
 
 export class AdvancedJobMatchingEngine {
   /**
-   * Transparent 0-100 fit engine with exact 100% weighted scoring model:
-   * Required Skill Match (30%) + Preferred Skill Match (10%) + Role Alignment (15%) +
-   * Experience (15%) + Location (10%) + Projects (5%) + Resume (5%) + Salary (5%) +
-   * Education (3%) + Job Freshness (2%) = 100%
+   * Transparent 0-100 fit engine with exact weight renormalization for undisclosed dimensions:
+   * Standard Weights:
+   * Required Skill (30%) + Preferred Skill (10%) + Role (15%) + Experience (15%) +
+   * Location (10%) + Projects (5%) + Resume (5%) + Salary (5%) + Education (3%) + Freshness (2%) = 100%
    */
   public calculateMatch(
     candidate: {
@@ -110,7 +110,6 @@ export class AdvancedJobMatchingEngine {
         matchedSkills.push(reqSkill);
         requiredMatchedCount += 1;
       } else {
-        // Check for Transferable Skill in same category
         let foundTransferable = false;
         for (const [catName, catSkills] of Object.entries(TRANSFERABLE_CATEGORIES)) {
           if (catSkills.some(cs => cs.toLowerCase() === key)) {
@@ -145,7 +144,7 @@ export class AdvancedJobMatchingEngine {
       }
     });
 
-    // 1. Required Skill Score (0-100) & Penalty
+    // 1. Required Skill Score (0-100)
     let requiredSkillScore = 100;
     if (normalizedReq.length > 0) {
       const effectiveMatched = requiredMatchedCount + requiredPartialCount;
@@ -173,23 +172,25 @@ export class AdvancedJobMatchingEngine {
       roleScore = 75;
     }
 
-    // 4. Experience Score (0-100)
+    // 4. Experience Score (0-100) & Severe Experience Gap Check
     const reqMinExp = job.experienceMin ?? 0;
     const reqMaxExp = job.experienceMax ?? (reqMinExp + 4);
     let experienceScore = 90;
     const risks: string[] = [];
 
+    const experienceGap = reqMinExp - candidate.experienceYears;
+    const isSevereExperienceGap = experienceGap >= 3;
+
     if (candidate.experienceYears < reqMinExp) {
-      const diff = reqMinExp - candidate.experienceYears;
-      if (diff >= 3) {
-        experienceScore = 35; // Severe mismatch (1 yr vs 5+ yr role)
+      if (isSevereExperienceGap) {
+        experienceScore = 35; // Severe mismatch penalty
         risks.push(`Candidate has ${candidate.experienceYears} yr experience, but position requires ${reqMinExp}+ yrs`);
       } else {
-        experienceScore = Math.max(45, Math.round(90 - diff * 20));
+        experienceScore = Math.max(45, Math.round(90 - experienceGap * 20));
         risks.push(`Experience (${candidate.experienceYears} yrs) below minimum requirement (${reqMinExp} yrs)`);
       }
     } else if (candidate.experienceYears > reqMaxExp + 4) {
-      experienceScore = 80; // Overqualified compatibility score
+      experienceScore = 80;
     }
 
     // 5. Location Score (0-100)
@@ -218,20 +219,38 @@ export class AdvancedJobMatchingEngine {
       }
     }
 
-    // 7. Education Score (100 neutral if not explicitly required by job)
+    // 7. Education Score (100 neutral if not required)
     let educationScore = 100;
     if (job.educationRequired) {
       const hasEdu = candidate.education && candidate.education.length > 0;
       educationScore = hasEdu ? 95 : 60;
     }
 
-    // 8. Project Score (0-100)
-    let projectScore = 70;
-    if (candidate.projects && candidate.projects.length > 0) {
-      const matchingProj = candidate.projects.some(p => 
-        (p.techStack || []).some(ts => normalizedReq.includes(normalizeSkill(ts)))
-      );
-      projectScore = matchingProj ? 95 : 80;
+    // 8. Improved Project Relevance Score based on Required Skills Overlap
+    let projectScore = 40; // Neutral base if candidate has no projects
+    if (candidate.projects && candidate.projects.length > 0 && normalizedReq.length > 0) {
+      const candidateProjectSkills = new Set<string>();
+      candidate.projects.forEach(p => {
+        (p.techStack || []).forEach(ts => candidateProjectSkills.add(normalizeSkill(ts).toLowerCase()));
+      });
+
+      let matchedProjSkillCount = 0;
+      normalizedReq.forEach(req => {
+        if (candidateProjectSkills.has(req.toLowerCase())) {
+          matchedProjSkillCount++;
+        }
+      });
+
+      const overlapRatio = matchedProjSkillCount / normalizedReq.length;
+      if (overlapRatio >= 0.6) {
+        projectScore = 95; // Strong overlap
+      } else if (overlapRatio >= 0.3) {
+        projectScore = 80; // Moderate overlap
+      } else if (overlapRatio > 0) {
+        projectScore = 60; // Weak overlap
+      } else {
+        projectScore = 45; // No overlap
+      }
     }
 
     // 9. Resume Score (0-100)
@@ -262,11 +281,10 @@ export class AdvancedJobMatchingEngine {
       }
     }
 
-    // Neutral handling for salary: use 90 for weighted sum if undisclosed
-    const effSalary = salaryScore !== null ? salaryScore : 90;
-
-    // 11. Calculate Exact 100% Weighted Overall Score
-    const weightedSum = Math.round(
+    // 11. Mathematical Weight Renormalization for Undisclosed Salary
+    // Standard dimension weights:
+    // reqSkill: 0.30, prefSkill: 0.10, role: 0.15, exp: 0.15, loc: 0.10, proj: 0.05, res: 0.05, sal: 0.05, edu: 0.03, fresh: 0.02
+    let weightedSum = 
       requiredSkillScore * 0.30 +
       preferredSkillScore * 0.10 +
       roleScore * 0.15 +
@@ -274,19 +292,28 @@ export class AdvancedJobMatchingEngine {
       locationScore * 0.10 +
       projectScore * 0.05 +
       resumeScore * 0.05 +
-      effSalary * 0.05 +
       educationScore * 0.03 +
-      freshnessScore * 0.02
-    );
+      freshnessScore * 0.02;
 
-    let overallScore = Math.max(10, Math.min(99, weightedSum));
+    let totalKnownWeight = 0.95; // Excludes salary 0.05 if undisclosed
 
-    // Critical Mandatory Requirement Override:
-    // If >50% of required skills are missing or severe experience gap, downgrade recommendation
+    if (salaryScore !== null) {
+      weightedSum += salaryScore * 0.05;
+      totalKnownWeight += 0.05; // 1.00 total
+    }
+
+    // Renormalize proportionally back to 100
+    const rawOverallScore = Math.round(weightedSum / totalKnownWeight);
+    let overallScore = Math.max(10, Math.min(99, rawOverallScore));
+
+    // 12. Critical Mandatory Requirement Override
     let mandatoryOverride = false;
     let recommendationReason: string | undefined;
 
-    if (normalizedReq.length > 0 && missingRequired.length > normalizedReq.length / 2) {
+    if (isSevereExperienceGap) {
+      mandatoryOverride = true;
+      recommendationReason = `Severe experience gap (${candidate.experienceYears} yrs vs ${reqMinExp}+ yrs required)`;
+    } else if (normalizedReq.length > 0 && missingRequired.length > normalizedReq.length / 2) {
       mandatoryOverride = true;
       recommendationReason = 'Mandatory required skills missing';
     }
