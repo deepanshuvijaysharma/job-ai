@@ -177,7 +177,7 @@ describe('JobHunter AI Step 10: Complete End-to-End Final Acceptance Verificatio
     expect(confirmedProposal.isConfirmed).toBe(true);
 
     // 9. Automatic Stop Condition Suppresses Follow-Ups
-    const suppressedCount = followUpEngineService.evaluateStopCondition(jobId, recruiter.id, 'REPLIED');
+    const suppressedCount = await followUpEngineService.evaluateStopCondition(jobId, recruiter.id, 'REPLIED');
     expect(suppressedCount).toBeGreaterThan(0);
 
     // 10. AI Interview Preparation Generated

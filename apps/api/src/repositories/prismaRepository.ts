@@ -19,18 +19,31 @@ if (!process.env.DATABASE_URL) {
   process.env.DATABASE_URL = "postgresql://postgres:postgrespassword@localhost:5432/jobhunter_db?schema=public";
 }
 
+let isPrismaOnline: boolean | null = null;
+
 const executeWithFastTimeout = async <T>(prismaFn: () => Promise<T>): Promise<T> => {
+  if (isPrismaOnline === false) {
+    throw new Error('Prisma offline');
+  }
+
   let timer: NodeJS.Timeout;
   const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error('Prisma offline timeout')), 150);
+    timer = setTimeout(() => {
+      isPrismaOnline = false;
+      reject(new Error('Prisma offline timeout'));
+    }, 150);
   });
 
   try {
     const res = await Promise.race([prismaFn(), timeout]);
     clearTimeout(timer!);
+    isPrismaOnline = true;
     return res;
   } catch (err) {
     clearTimeout(timer!);
+    if (isPrismaOnline === null) {
+      isPrismaOnline = false;
+    }
     throw err;
   }
 };
@@ -460,20 +473,109 @@ export class RecruiterRepository {
 export class FollowUpRepository {
   async findByApplicationId(applicationId: string) {
     try {
-      return await prisma.followUp.findMany({ where: { applicationId } });
+      return await executeWithFastTimeout(() => prisma.followUp.findMany({ where: { applicationId } }));
     } catch {
       return [];
     }
   }
 
-  async create(data: { applicationId: string; scheduledFor: Date; stepNumber: number; suggestedBody?: string }) {
+  async upsertFollowUp(data: {
+    id?: string;
+    applicationId: string;
+    recruiterId?: string;
+    userId?: string;
+    stepNumber: number;
+    scheduledAt: Date;
+    status?: string;
+    suggestedSubject?: string;
+    suggestedBody?: string;
+  }) {
     try {
-      return await executeWithFastTimeout(() => prisma.followUp.create({
-        data: {
+      return await executeWithFastTimeout(() => prisma.followUp.upsert({
+        where: {
+          applicationId_stepNumber: {
+            applicationId: data.applicationId,
+            stepNumber: data.stepNumber
+          }
+        },
+        create: {
+          id: data.id,
           applicationId: data.applicationId,
-          scheduledFor: data.scheduledFor,
+          recruiterId: data.recruiterId,
+          userId: data.userId,
           stepNumber: data.stepNumber,
+          scheduledAt: data.scheduledAt,
+          status: data.status || 'SCHEDULED',
+          suggestedSubject: data.suggestedSubject,
           suggestedBody: data.suggestedBody
+        },
+        update: {
+          scheduledAt: data.scheduledAt,
+          suggestedSubject: data.suggestedSubject,
+          suggestedBody: data.suggestedBody
+        }
+      }));
+    } catch {
+      return null;
+    }
+  }
+
+  async findDueFollowUps(now: Date = new Date()) {
+    try {
+      return await executeWithFastTimeout(() => prisma.followUp.findMany({
+        where: {
+          status: { in: ['SCHEDULED', 'DUE'] },
+          scheduledAt: { lte: now },
+          cancelledAt: null
+        },
+        include: {
+          application: {
+            include: {
+              job: true
+            }
+          },
+          recruiter: true
+        }
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  async cancelFollowUpsForApplication(applicationId: string, recruiterId?: string, reason: string = 'STOP_CONDITION') {
+    try {
+      const whereClause: any = {
+        applicationId,
+        cancelledAt: null,
+        status: { notIn: ['SENT', 'CANCELLED'] }
+      };
+      if (recruiterId) {
+        whereClause.recruiterId = recruiterId;
+      }
+
+      return await executeWithFastTimeout(() => prisma.followUp.updateMany({
+        where: whereClause,
+        data: {
+          status: 'CANCELLED',
+          cancelledAt: new Date(),
+          cancelReason: reason
+        }
+      }));
+    } catch {
+      return { count: 0 };
+    }
+  }
+
+  async updateFollowUpStatus(id: string, status: string, extra?: { approvedAt?: Date; sentAt?: Date; sourceMessageId?: string; failureReason?: string }) {
+    try {
+      return await executeWithFastTimeout(() => prisma.followUp.update({
+        where: { id },
+        data: {
+          status,
+          approvedAt: extra?.approvedAt,
+          sentAt: extra?.sentAt,
+          sourceMessageId: extra?.sourceMessageId,
+          failureReason: extra?.failureReason
         }
       }));
     } catch {

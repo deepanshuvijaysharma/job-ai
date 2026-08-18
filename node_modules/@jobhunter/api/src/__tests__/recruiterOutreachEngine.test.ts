@@ -94,11 +94,11 @@ describe('JobHunter AI Step 8: Recruiter Outreach Engine Suite', () => {
     expect(tasks[2].scheduledForDays).toBe(10);
   });
 
-  it('5. Automatic Stop Conditions: Immediately suppresses pending follow-ups when recruiter replies or job closes', () => {
-    const suppressed = followUpEngineService.evaluateStopCondition('job-101', 'rec-101', 'REPLIED');
+  it('5. Automatic Stop Conditions: Immediately suppresses pending follow-ups when recruiter replies or job closes', async () => {
+    const suppressed = await followUpEngineService.evaluateStopCondition('job-101', 'rec-101', 'REPLIED');
     expect(suppressed).toBe(3);
 
-    const dueList = followUpEngineService.getDueFollowUps('demo-user-123');
-    expect(dueList.filter(t => t.jobId === 'job-101').length).toBe(0);
+    const dueList = await followUpEngineService.getDueFollowUps('demo-user-123');
+    expect(dueList.filter((t: any) => t.jobId === 'job-101').length).toBe(0);
   });
 });

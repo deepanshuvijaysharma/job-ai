@@ -8,8 +8,9 @@ import { queuedEmailsMap } from './outreachController';
 
 export const getDailySummary = async (req: AuthenticatedRequest, res: Response) => {
   const userId = req.user?.id || 'demo-user-123';
-  const dashboard = dailyStrategyEngine.getMorningDashboard(userId);
+  const dashboard = await dailyStrategyEngine.getMorningDashboard(userId);
   return res.json({
+    greeting: dashboard.greeting,
     date: dashboard.todayDate,
     highMatchJobsCount: dashboard.metrics.highMatchJobsCount,
     recruitersFoundCount: dashboard.metrics.recruitersToContactCount,
@@ -112,7 +113,7 @@ export const getAnalyticsDashboard = async (req: AuthenticatedRequest, res: Resp
 
 export const getMorningDashboard = async (req: AuthenticatedRequest, res: Response) => {
   const userId = req.user?.id || 'demo-user-123';
-  const dashboard = dailyStrategyEngine.getMorningDashboard(userId);
+  const dashboard = await dailyStrategyEngine.getMorningDashboard(userId);
   return res.json(dashboard);
 };
 

@@ -65,7 +65,7 @@ export class DailyStrategyEngine {
   /**
    * Compute Morning Dashboard Overview & Daily Priority Actions
    */
-  public getMorningDashboard(userId: string): DailyDashboardDTO {
+  public async getMorningDashboard(userId: string): Promise<DailyDashboardDTO> {
     const todayStr = new Date().toISOString().split('T')[0];
     
     // 1. High match jobs
@@ -81,7 +81,7 @@ export class DailyStrategyEngine {
     );
 
     // 3. Follow-ups due
-    const followupsDue = followUpEngineService.getDueFollowUps(userId);
+    const followupsDue = await followUpEngineService.getDueFollowUps(userId);
 
     // 4. Upcoming interviews
     const userApps = Array.from(memoryStore.applications.values()).filter(a => a.userId === userId);

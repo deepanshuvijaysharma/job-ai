@@ -2,6 +2,7 @@ import request from 'supertest';
 import { app } from '../app';
 import { memoryStore } from '../services/store';
 import { seedDemoOutreachEmails } from '../controllers/outreachController';
+import { followUpEngineService } from '../services/outreach/followUpEngine';
 
 describe('JobHunter AI Recruiter Outreach & Approval Queue Suite', () => {
   let authToken: string;
@@ -77,6 +78,27 @@ describe('JobHunter AI Recruiter Outreach & Approval Queue Suite', () => {
   });
 
   it('5. GET /api/outreach/followups should return scheduled follow-up reminders', async () => {
+    const pastScheduledAt = new Date(Date.now() - 5000);
+    const task = {
+      id: 'fu-outreach-test-1',
+      userId: 'demo-user-123',
+      applicationId: 'job-101',
+      jobId: 'job-101',
+      jobTitle: 'Backend Developer',
+      companyName: 'Acme Cloud',
+      recruiterId: 'rec-1',
+      recruiterName: 'Amit Sharma',
+      candidateName: 'Deepanshu Sharma',
+      stage: 1,
+      scheduledForDays: 2,
+      scheduledAt: pastScheduledAt.toISOString(),
+      status: 'SCHEDULED' as const,
+      subject: 'Follow up',
+      body: 'Hi Amit...',
+      createdAt: new Date().toISOString()
+    };
+    followUpEngineService.saveToFallbackCache(task);
+
     const res = await request(app)
       .get('/api/outreach/followups')
       .set('Authorization', `Bearer ${authToken}`);

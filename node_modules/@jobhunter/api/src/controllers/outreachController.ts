@@ -208,7 +208,7 @@ export const editEmailDraft = async (req: AuthenticatedRequest, res: Response) =
 
 export const getDueFollowUps = async (req: AuthenticatedRequest, res: Response) => {
   const userId = req.user?.id || 'demo-user-123';
-  const due = followUpEngineService.getDueFollowUps(userId);
+  const due = await followUpEngineService.getDueFollowUps(userId);
   return res.json(due);
 };
 
@@ -218,10 +218,10 @@ export const stopFollowUp = async (req: AuthenticatedRequest, res: Response) => 
     return res.status(400).json({ error: 'jobId, recruiterId, and condition are required' });
   }
 
-  const count = followUpEngineService.evaluateStopCondition(
+  const count = await followUpEngineService.evaluateStopCondition(
     jobId, 
     recruiterId, 
-    condition as 'REPLIED' | 'DECLINED' | 'REJECTED' | 'CANCELLED' | 'JOB_CLOSED'
+    condition as any
   );
 
   return res.json({
