@@ -448,10 +448,13 @@ export interface FollowUpActionItemDTO {
 export interface DailyQuotaDTO {
   applicationsToday: number;
   applicationsLimit: number;
+  applicationsRemaining: number;
   recruiterEmailsToday: number;
   recruiterEmailsLimit: number;
+  recruiterEmailsRemaining: number;
   followupsToday: number;
   followupsLimit: number;
+  followupsRemaining: number;
 }
 
 export interface Step10MorningDashboardDTO {

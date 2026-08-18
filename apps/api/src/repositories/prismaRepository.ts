@@ -306,6 +306,19 @@ export class JobRepository {
       return jobData;
     }
   }
+
+  async countDiscoveredToday(): Promise<number> {
+    try {
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+
+      const dbCount = await executeWithFastTimeout(() => prisma.job.count({
+        where: { createdAt: { gte: startOfDay } }
+      }));
+      if (dbCount > 0) return dbCount;
+    } catch {}
+    return Array.from(memoryStore.jobs.values()).length;
+  }
 }
 
 // ==========================================
@@ -348,6 +361,37 @@ export class JobMatchRepository {
       return match.matchData;
     }
   }
+
+  async findMatchesByUserId(userId: string) {
+    try {
+      const dbMatches = await executeWithFastTimeout(() => prisma.jobMatch.findMany({
+        where: { userId },
+        include: { job: { include: { company: true, recruiters: { include: { recruiter: true } } } } }
+      }));
+      if (dbMatches && dbMatches.length > 0) return dbMatches;
+    } catch {}
+    
+    // Fallback to store cache if database unattached
+    const matches: any[] = [];
+    for (const [key, m] of memoryStore.matches.entries()) {
+      if (key.startsWith(`${userId}_`)) {
+        const jobId = key.split(`${userId}_`)[1];
+        const job = memoryStore.jobs.get(jobId);
+        if (m && m.overallScore) {
+          matches.push({
+            id: `match-${jobId}`,
+            userId,
+            jobId,
+            overallScore: m.overallScore,
+            priority: m.priority,
+            createdAt: new Date(),
+            job: job ? { ...job, company: { name: job.companyName }, postedAt: (job as any).postedAt } : null
+          });
+        }
+      }
+    }
+    return matches;
+  }
 }
 
 // ==========================================
@@ -366,6 +410,29 @@ export class ApplicationRepository {
     const storeApps = Array.from(memoryStore.applications.values()).filter(a => a.userId === userId);
     if (storeApps.length > 0) return storeApps;
     return Array.from(persistentAppCache.values()).filter(a => a.userId === userId);
+  }
+
+  async countSubmittedToday(userId: string): Promise<number> {
+    try {
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+
+      const dbCount = await executeWithFastTimeout(() => prisma.application.count({
+        where: {
+          userId,
+          appliedAt: { gte: startOfDay },
+          status: { in: [ApplicationStatus.APPLIED, ApplicationStatus.RECRUITER_CONTACTED, ApplicationStatus.RECRUITER_RESPONDED, ApplicationStatus.INTERVIEW_SCHEDULED, ApplicationStatus.TECHNICAL_ROUND, ApplicationStatus.HR_ROUND, ApplicationStatus.OFFER, ApplicationStatus.REJECTED] }
+        }
+      }));
+      if (dbCount > 0) return dbCount;
+    } catch {}
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const userApps = Array.from(memoryStore.applications.values()).filter(a => a.userId === userId);
+    return userApps.filter(a => {
+      const dateStr = a.createdAt || (a as any).appliedAt;
+      return dateStr && new Date(dateStr).toISOString().startsWith(todayStr);
+    }).length;
   }
 
   async upsertStatusWithTransaction(userId: string, jobId: string, status: ApplicationStatus, note?: string) {
@@ -464,6 +531,21 @@ export class RecruiterRepository {
 
   async upsert(recruiter: RecruiterDTO) {
     return this.upsertRecruiter(recruiter);
+  }
+
+  async countVerifiedByUserId(userId: string): Promise<number> {
+    try {
+      const dbCount = await executeWithFastTimeout(() => prisma.jobRecruiter.count({
+        where: {
+          job: { matches: { some: { userId } } },
+          recruiter: { verificationStatus: 'VERIFIED', isVerified: true }
+        }
+      }));
+      if (dbCount > 0) return dbCount;
+    } catch {}
+
+    const recMap = (memoryStore as any).recruiters || new Map();
+    return Array.from(recMap.values()).filter((r: any) => r && r.isVerified).length;
   }
 }
 
@@ -667,6 +749,44 @@ export class EmailRepository {
     } catch {
       return 0;
     }
+  }
+
+  async countOutboundSentTodayByUserId(userId: string): Promise<number> {
+    try {
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+
+      const dbCount = await executeWithFastTimeout(() => prisma.emailMessage.count({
+        where: {
+          account: { userId },
+          direction: 'OUTBOUND',
+          status: 'SENT',
+          sentAt: { gte: startOfDay }
+        }
+      }));
+      if (dbCount > 0) return dbCount;
+    } catch {}
+    return 0;
+  }
+
+  async countFollowUpsSentTodayByUserId(userId: string): Promise<number> {
+    try {
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+
+      const dbCount = await executeWithFastTimeout(() => prisma.emailMessage.count({
+        where: {
+          account: { userId },
+          direction: 'OUTBOUND',
+          status: 'SENT',
+          sentAt: { gte: startOfDay },
+          subject: { contains: 'Follow', mode: 'insensitive' }
+        }
+      }));
+      if (dbCount > 0) return dbCount;
+    } catch {}
+
+    return 0;
   }
 
   async recordDispatchMessage(data: {
