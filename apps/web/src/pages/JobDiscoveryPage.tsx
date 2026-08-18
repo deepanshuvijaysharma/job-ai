@@ -202,15 +202,26 @@ export const JobDiscoveryPage: React.FC<Props> = ({ onSelectJob, onPrepareJob })
                   {/* Recruiter Found Badge */}
                   <div className="pt-2">
                     {job.recruiters && job.recruiters.length > 0 ? (
-                      <div className="px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-center justify-between text-xs text-emerald-400">
-                        <span className="flex items-center space-x-1.5 font-semibold">
-                          <UserCheck className="w-4 h-4" />
-                          <span>Recruiter: {job.recruiters[0].name} ({job.recruiters[0].role})</span>
-                        </span>
-                        <span className="text-[10px] bg-emerald-500/20 px-1.5 py-0.5 rounded font-bold">FOUND ✓</span>
+                      <div className="px-3 py-2 bg-emerald-500/10 border border-emerald-500/20 rounded-xl space-y-1 text-xs text-emerald-400">
+                        <div className="flex items-center justify-between">
+                          <span className="flex items-center space-x-1.5 font-semibold">
+                            <UserCheck className="w-4 h-4" />
+                            <span>{job.recruiters[0].name} ({job.recruiters[0].role})</span>
+                          </span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${job.recruiters[0].verificationStatus === 'VERIFIED' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'}`}>
+                            {job.recruiters[0].verificationStatus === 'VERIFIED' ? '✓ VERIFIED' : 'PUBLIC EVIDENCE'}
+                          </span>
+                        </div>
+                        {job.recruiters[0].sourceUrl && (
+                          <div className="text-[10px] text-slate-400">
+                            Source: <a href={job.recruiters[0].sourceUrl} target="_blank" rel="noopener noreferrer" className="text-brand-400 hover:underline">[View Evidence]</a>
+                          </div>
+                        )}
                       </div>
                     ) : (
-                      <div className="text-[11px] text-slate-500 italic">No recruiter contract identified yet</div>
+                      <div className="text-[11px] text-slate-500 italic bg-dark-900/60 p-2 rounded-lg border border-slate-800/80">
+                        No verified recruiter found
+                      </div>
                     )}
                   </div>
 

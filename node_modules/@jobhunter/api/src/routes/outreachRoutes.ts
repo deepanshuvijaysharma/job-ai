@@ -1,10 +1,11 @@
 import { Router } from 'express';
-import { approveEmails, editEmailDraft, generateEmailDraft, getApprovalQueue, getDueFollowUps, stopFollowUp } from '../controllers/outreachController';
+import { approveEmails, editEmailDraft, generateEmailDraft, getApprovalQueue, getDueFollowUps, getRecruiterProviderHealth, stopFollowUp } from '../controllers/outreachController';
 import { authenticateJWT } from '../middleware/authMiddleware';
 
 const router = Router();
 
 router.get('/approval-queue', authenticateJWT, getApprovalQueue);
+router.get('/providers/health', authenticateJWT, getRecruiterProviderHealth);
 router.post('/generate', authenticateJWT, generateEmailDraft);
 router.post('/approve', authenticateJWT, approveEmails);
 router.post('/edit', authenticateJWT, editEmailDraft);

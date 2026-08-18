@@ -124,9 +124,18 @@ export interface RecruiterDTO {
   role: string;
   linkedinUrl?: string;
   email?: string;
+  emailSource?: string;
+  emailVerified?: 'VERIFIED' | 'PUBLIC' | 'UNVERIFIED' | 'UNKNOWN';
+  profileSource?: string;
+  sourceUrl?: string;
+  location?: string;
+  department?: string;
+  recruitingFocus?: string;
+  verificationStatus?: 'VERIFIED' | 'PUBLIC' | 'UNVERIFIED' | 'NO_CONTACT';
   isVerified: boolean;
   confidence: number;
   source?: string;
+  lastVerifiedAt?: string;
 }
 
 export interface JobDTO {

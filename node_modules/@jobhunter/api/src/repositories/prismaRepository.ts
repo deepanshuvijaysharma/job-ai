@@ -412,24 +412,45 @@ export class ApplicationRepository {
 // 7. Recruiter Repository
 // ==========================================
 export class RecruiterRepository {
-  async upsert(recruiter: RecruiterDTO) {
+  async upsertRecruiter(recruiter: RecruiterDTO & { companyName?: string }) {
     try {
-      return await prisma.recruiter.create({
-        data: {
+      return await executeWithFastTimeout(() => prisma.recruiter.upsert({
+        where: { id: recruiter.id },
+        create: {
           id: recruiter.id,
           companyId: recruiter.companyId,
           name: recruiter.name,
           role: recruiter.role,
           linkedinUrl: recruiter.linkedinUrl,
           email: recruiter.email,
+          emailSource: recruiter.emailSource,
+          emailVerified: recruiter.emailVerified || 'UNKNOWN',
+          sourceUrl: recruiter.sourceUrl,
+          verificationStatus: recruiter.verificationStatus || 'UNVERIFIED',
           isVerified: recruiter.isVerified,
           confidence: recruiter.confidence,
-          source: recruiter.source
+          source: recruiter.source,
+          lastVerifiedAt: recruiter.lastVerifiedAt ? new Date(recruiter.lastVerifiedAt) : undefined
+        },
+        update: {
+          role: recruiter.role,
+          email: recruiter.email,
+          emailSource: recruiter.emailSource,
+          emailVerified: recruiter.emailVerified,
+          sourceUrl: recruiter.sourceUrl,
+          verificationStatus: recruiter.verificationStatus,
+          isVerified: recruiter.isVerified,
+          confidence: recruiter.confidence,
+          lastVerifiedAt: recruiter.lastVerifiedAt ? new Date(recruiter.lastVerifiedAt) : undefined
         }
-      });
+      }));
     } catch {
       return null;
     }
+  }
+
+  async upsert(recruiter: RecruiterDTO) {
+    return this.upsertRecruiter(recruiter);
   }
 }
 

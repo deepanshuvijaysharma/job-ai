@@ -37,11 +37,11 @@ export const seedDemoOutreachEmails = () => {
     jobTitle: 'Backend Developer (Node.js & Microservices)',
     companyName: 'Acme Cloud Technologies',
     recruiterId: 'rec-1',
-    recruiterName: 'Amit Sharma (Demo)',
+    recruiterName: 'Amit Sharma',
     recruiterEmail: 'amit.sharma@acmecloud.com',
     recruiterRole: 'Technical Recruiter - Engineering',
     subject: 'Application & Inquiry: Backend Developer — Deepanshu Sharma',
-    body: `Hi Amit,\n\nI noticed that Acme Cloud Technologies is hiring for a Backend Developer position focused on Node.js, Express, and REST APIs.\n\nMy background is aligned with Node.js, Express, REST APIs, TypeScript, and SQL, and I have built production-style microservices platforms around these technologies.\n\nI would be grateful if you could consider my profile for the role.\n\nThanks,\nDeepanshu Sharma`,
+    body: `Hi Amit,\n\nI noticed that Acme Cloud Technologies is hiring for a Backend Developer position focused on Node.js, Express, and REST APIs.\n\nMy background is aligned with Node.js, Express, REST APIs, TypeScript, and SQL.\n\nThanks,\nDeepanshu Sharma`,
     templateType: 'FIRST_CONTACT',
     isApproved: false,
     aiReasoning: 'Direct outreach to primary technical recruiter for 96% match job opening.',
@@ -228,4 +228,9 @@ export const stopFollowUp = async (req: AuthenticatedRequest, res: Response) => 
     message: `Automatic stop condition evaluated cleanly. Suppressed ${count} pending follow-up tasks.`,
     suppressedCount: count
   });
+};
+
+export const getRecruiterProviderHealth = async (req: AuthenticatedRequest, res: Response) => {
+  const providers = recruiterService.getProviderHealth();
+  return res.json({ providers });
 };
